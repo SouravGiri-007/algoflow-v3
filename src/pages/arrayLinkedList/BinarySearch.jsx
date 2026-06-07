@@ -10,7 +10,19 @@ const CYAN   = "oklch(0.75 0.18 195)";
 const BG     = "oklch(0.13 0.025 240)";
 const BORDER = "oklch(0.22 0.04 240)";
 
-const CODE = `def binary_search(arr, target):
+const CODES = {
+  pseudo: `BINARY-SEARCH(arr, target):
+  left = 0, right = length(arr) - 1
+  while left <= right:
+    mid = (left + right) / 2
+    if arr[mid] == target:
+      return mid              // Found!
+    else if arr[mid] < target:
+      left = mid + 1          // Search right half
+    else:
+      right = mid - 1         // Search left half
+  return -1                   // Not found`,
+  python: `def binary_search(arr, target):
     left, right = 0, len(arr) - 1
 
     while left <= right:
@@ -25,7 +37,44 @@ const CODE = `def binary_search(arr, target):
         else:
             right = mid - 1     # Search left half
 
-    return -1                   # Not found`;
+    return -1                   # Not found`,
+  javascript: `function binarySearch(arr, target) {
+    let left = 0, right = arr.length - 1;
+
+    while (left <= right) {
+        let mid = Math.floor((left + right) / 2);
+
+        if (arr[mid] === target) {
+            return mid;          // Found!
+
+        } else if (arr[mid] < target) {
+            left = mid + 1;      // Search right half
+
+        } else {
+            right = mid - 1;     // Search left half
+        }
+    }
+    return -1;                   // Not found
+}`,
+  cpp: `int binarySearch(vector<int>& arr, int target) {
+    int left = 0, right = arr.size() - 1;
+
+    while (left <= right) {
+        int mid = left + (right - left) / 2;
+
+        if (arr[mid] == target) {
+            return mid;          // Found!
+
+        } else if (arr[mid] < target) {
+            left = mid + 1;      // Search right half
+
+        } else {
+            right = mid - 1;     // Search left half
+        }
+    }
+    return -1;                   // Not found
+}`,
+};
 
 function buildSteps(arr, target) {
   const steps = [];
@@ -292,7 +341,7 @@ export default function BinarySearch() {
           {/* RIGHT: code panel */}
           <div className="h-[500px] xl:h-auto xl:min-h-[600px]">
             <CodePanel
-              codes={CODE}
+              codes={CODES}
               highlightLine={currentStep?.line ?? null}
               language="python"
             />

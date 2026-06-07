@@ -10,7 +10,25 @@ const CYAN   = "oklch(0.75 0.18 195)";
 const BG     = "oklch(0.13 0.025 240)";
 const BORDER = "oklch(0.22 0.04 240)";
 
-const CODE = `def heapify(arr, n, i):
+const CODES = {
+  pseudo: `HEAP-SORT(arr):
+  n = length(arr)
+  Build max-heap from arr
+  for i from n-1 down to 1:
+    swap arr[0] and arr[i]
+    HEAPIFY(arr, i, 0)
+
+HEAPIFY(arr, n, i):
+  largest = i
+  left = 2*i + 1, right = 2*i + 2
+  if left < n and arr[left] > arr[largest]:
+    largest = left
+  if right < n and arr[right] > arr[largest]:
+    largest = right
+  if largest != i:
+    swap arr[i] and arr[largest]
+    HEAPIFY(arr, n, largest)`,
+  python: `def heapify(arr, n, i):
     largest = i
     left  = 2 * i + 1
     right = 2 * i + 2
@@ -35,7 +53,69 @@ def heap_sort(arr):
     # Extract elements one by one
     for i in range(n - 1, 0, -1):
         arr[0], arr[i] = arr[i], arr[0]
-        heapify(arr, n, 0)`;
+        heapify(arr, n, 0)`,
+  javascript: `function heapify(arr, n, i) {
+    let largest = i;
+    let left  = 2 * i + 1;
+    let right = 2 * i + 2;
+
+    if (left < n && arr[left] > arr[largest]) {
+        largest = left;
+    }
+
+    if (right < n && arr[right] > arr[largest]) {
+        largest = right;
+    }
+
+    if (largest !== i) {
+        [arr[i], arr[largest]] = [arr[largest], arr[i]];
+        heapify(arr, n, largest);
+    }
+}
+
+function heapSort(arr) {
+    const n = arr.length;
+
+    // Build max heap
+    for (let i = Math.floor(n / 2) - 1; i >= 0; i--) {
+        heapify(arr, n, i);
+    }
+
+    // Extract elements one by one
+    for (let i = n - 1; i > 0; i--) {
+        [arr[0], arr[i]] = [arr[i], arr[0]];
+        heapify(arr, n, 0);
+    }
+}`,
+  cpp: `void heapify(int arr[], int n, int i) {
+    int largest = i;
+    int left  = 2 * i + 1;
+    int right = 2 * i + 2;
+
+    if (left < n && arr[left] > arr[largest])
+        largest = left;
+
+    if (right < n && arr[right] > arr[largest])
+        largest = right;
+
+    if (largest != i) {
+        swap(arr[i], arr[largest]);
+        heapify(arr, n, largest);
+    }
+}
+
+void heapSort(int arr[], int n) {
+    // Build max heap
+    for (int i = n / 2 - 1; i >= 0; i--)
+        heapify(arr, n, i);
+
+    // Extract elements one by one
+    for (int i = n - 1; i > 0; i--) {
+        swap(arr[0], arr[i]);
+        heapify(arr, n, 0);
+    }
+}`,
+};
 
 function buildSteps(inputArr) {
   const arr = [...inputArr];
@@ -223,7 +303,7 @@ export default function HeapSort() {
           </div>
 
           <div className="h-[500px] xl:h-auto">
-            <CodePanel code={CODE} highlightLine={cur?.line ?? null} language="python" />
+            <CodePanel codes={CODES} highlightLine={cur?.line ?? null} language="python" />
           </div>
         </div>
       </AlgoPageLayout>
