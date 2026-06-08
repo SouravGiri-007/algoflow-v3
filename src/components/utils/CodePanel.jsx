@@ -8,6 +8,7 @@ export const CodePanel = memo(function CodePanel({ codes, highlightLine, languag
   const [lang, setLang] = useState(defaultLang);
   const [mode, setMode] = useState("code"); // "code" | "pseudo"
   const activeRef = useRef(null);
+  const containerRef = useRef(null);
 
   // codes shape: { python, javascript, cpp, pseudo }
   // If codes is a plain string (legacy), wrap it
@@ -16,7 +17,14 @@ export const CodePanel = memo(function CodePanel({ codes, highlightLine, languag
   const lines = displayCode.split("\n");
 
   useEffect(() => {
-    if (activeRef.current) activeRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (activeRef.current && containerRef.current) {
+      const container = containerRef.current;
+      const line = activeRef.current;
+      const containerRect = container.getBoundingClientRect();
+      const lineRect = line.getBoundingClientRect();
+      const offset = lineRect.top - containerRect.top - container.clientHeight / 2 + line.clientHeight / 2;
+      container.scrollTo({ top: container.scrollTop + offset, behavior: "smooth" });
+    }
   }, [highlightLine]);
 
   return (
@@ -66,7 +74,7 @@ export const CodePanel = memo(function CodePanel({ codes, highlightLine, languag
       </div>
 
       {/* Lines */}
-      <div className="overflow-y-auto flex-1 p-2 scrollbar-hide">
+      <div className="overflow-y-auto flex-1 p-2 scrollbar-hide" ref={containerRef}>
         <div className="font-mono text-xs leading-6">
           {lines.map((line, i) => {
             const active = highlightLine === i;
