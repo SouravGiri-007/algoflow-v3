@@ -1,10 +1,27 @@
-import { memo } from "react";
+import { memo, useState, useEffect, useRef } from "react";
 import { MessageSquare } from "lucide-react";
+
 
 const CYAN = "oklch(0.75 0.18 195)";
 
 export const ExplanationPanel = memo(function ExplanationPanel({ steps, currentStep, totalSteps }) {
   const msg = steps?.[currentStep] || "Press Play to start the animation.";
+
+  const [showHistory, setShowHistory] = useState(false);
+  const activeRef = useRef(null);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    if (showHistory && activeRef.current && containerRef.current) {
+      const container = containerRef.current;
+      const line = activeRef.current;
+      const containerRect = container.getBoundingClientRect();
+      const lineRect = line.getBoundingClientRect();
+      const offset = lineRect.top - containerRect.top - container.clientHeight / 2 + line.clientHeight / 2;
+      container.scrollTo({ top: container.scrollTop + offset, behavior: "smooth" });
+    }
+  }, [currentStep, showHistory]);
+
 
   return (
     <div className="rounded-xl border flex flex-col overflow-hidden"
@@ -19,7 +36,17 @@ export const ExplanationPanel = memo(function ExplanationPanel({ steps, currentS
             Step {currentStep + 1} / {totalSteps}
           </span>
         )}
-      </div>
+      <button onClick={() => setShowHistory(!showHistory)}
+      className="ml-auto text-xs px-2 py-0.5 rounded-full border transition-all"
+      style={{
+        background: showHistory ? "oklch(0.75 0.18 195 / 0.15)" : "transparent",
+        borderColor: showHistory ? CYAN : "oklch(0.28 0.05 240)",
+        color: showHistory ? CYAN : "rgb(100 116 139)",
+      }}>
+      {showHistory ? "Live" : "History"}
+      </button>  
+    </div>
+
 
       {/* Progress bar */}
       {totalSteps > 0 && (
@@ -34,12 +61,37 @@ export const ExplanationPanel = memo(function ExplanationPanel({ steps, currentS
         </div>
       )}
 
-      {/* Message */}
-      <div className="p-4 flex-1">
-        <p className="text-sm text-slate-200 leading-relaxed animate-fade-in" key={currentStep}>
-          {msg}
-        </p>
+{/* Live mode */}
+{!showHistory && (
+  <div className="p-4 flex-1">
+    <p className="text-sm text-slate-200 leading-relaxed" key={currentStep}>
+      {msg}
+    </p>
+  </div>
+)}
+
+{/* History mode */}
+{showHistory && (
+  <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-hide" ref={containerRef}>
+    {steps.map((step, i) => (
+      <div key={i} className="flex gap-2 px-2 py-1.5 rounded-lg transition-all"
+        ref={i === currentStep ? activeRef : null}
+        style={{
+          background: i === currentStep ? "oklch(0.75 0.18 195 / 0.1)" : "transparent",
+          borderLeft: i === currentStep ? `2px solid ${CYAN}` : "2px solid transparent",
+        }}>
+        <span className="text-[10px] w-6 text-right flex-shrink-0 mt-0.5"
+          style={{ color: i === currentStep ? CYAN : "oklch(0.35 0.04 240)" }}>
+          {i + 1}
+        </span>
+        <span className="text-xs leading-relaxed"
+          style={{ color: i === currentStep ? "#fff" : "oklch(0.5 0.04 230)" }}>
+          {step}
+        </span>
       </div>
+    ))}
+  </div>
+)}
     </div>
   );
 });
