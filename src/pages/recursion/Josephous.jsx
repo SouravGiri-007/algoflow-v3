@@ -1,435 +1,389 @@
-import { useState, useEffect, useCallback } from "react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-
-import { AlgoFlowHeader as Header } from "../../components/Header/Header";
-import Description from "../../components/utils/Description";
+import { useState, useRef, useCallback } from "react";
+import { Play, Pause, RotateCcw } from "lucide-react";
+import AlgoPageLayout from "../../components/AlgoPageLayout";
+import CodePanel from "../../components/utils/CodePanel";
+import ExplanationPanel from "../../components/utils/ExplanationPanel";
 import SpeedControl from "../../components/utils/SpeedControl";
 import SEO from "../../components/SEO";
 
-function JosephusProblem() {
-  const [n, setN] = useState(7); // number of people
-  const [k, setK] = useState(3); // step size
-  const [people, setPeople] = useState([]);
-  const [currentPosition, setCurrentPosition] = useState(0);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [animationSpeed, setAnimationSpeed] = useState(800);
-  const [eliminationOrder, setEliminationOrder] = useState([]);
-  const [currentStep, setCurrentStep] = useState(0);
-  const [survivor, setSurvivor] = useState(null);
+const CYAN = "oklch(0.75 0.18 195)";
+const BG = "oklch(0.13 0.025 240)";
+const BORDER = "oklch(0.22 0.04 240)";
 
-  const descriptionData = {
-    heading: `The Josephus Problem`,
-    subheading: `A classic problem in mathematics and computer science`,
-    summary: `<p className="text-neutral-300 leading-relaxed">
-    The Josephus problem is a theoretical problem related to a certain
-    counting-out game. People are standing in a circle waiting to be
-    executed. Counting begins at a specified point in the circle and
-    proceeds around the circle in a specified direction. After a specified
-    number of people are skipped, the next person is executed. The
-    procedure is repeated with the remaining people, starting after the
-    person who was just executed, until only one person remains, and is
-    freed.</p>`,
-    history: `Named after Flavius Josephus, a Jewish historian who lived in the 1st century.`,
-    lang: "python",
-    code: `
-    # recursive
-    def josephus(n, k):
-      if n == 1:
-        return 0
-      return (josephus(n - 1, k) + k) % n
+const CODES = {
+  pseudo: `JOSEPHUS(n, k):
+  res = 0
+  for i = 2 to n:
+    res = (res + k) mod i
+  return res  // 0-based index
 
-    # iterative
-    def josephus(n, k):
-      res = 0
-      for i in range(2, n + 1):
+JOSEPHUS-RECURSIVE(n, k):
+  if n == 1:
+    return 0
+  return (JOSEPHUS-RECURSIVE(n-1, k) + k) mod n`,
+  python: `# Iterative
+def josephus(n, k):
+    res = 0
+    for i in range(2, n + 1):
         res = (res + k) % i
-      return res  # 0-based
-    `,
-  };
-  const seoData = {
-    title: "Josephus Problem - Recursive & Mathematical Visualization",
-    description:
-      "Visual walkthrough of the Josephus Problem using recursion and patterns. Understand how the last survivor is determined step by step.",
-    canonical: "https://dsa-experiments.vercel.app/recursion/josephus-problem",
-    openGraph: {
-      title: "Josephus Problem - Recursive & Mathematical Visualization",
-      description:
-        "Visual walkthrough of the Josephus Problem using recursion and patterns. Understand how the last survivor is determined step by step.",
-      url: "https://dsa-experiments.vercel.app/recursion/josephus-problem",
-      image: "/images/josephus-problem/prev.png",
-    },
-    schema: {
-      "@context": "https://schema.org",
-      "@type": "WebPage",
-      name: "Josephus Problem - Recursive & Mathematical Visualization",
-      url: "https://dsa-experiments.vercel.app/recursion/josephus-problem",
-      description:
-        "Interactive recursive simulation of the Josephus Problem with animations.",
-      breadcrumb: {
-        "@type": "BreadcrumbList",
-        itemListElement: [
-          {
-            "@type": "ListItem",
-            position: 1,
-            name: "Home",
-            item: "https://dsa-experiments.vercel.app",
-          },
-          {
-            "@type": "ListItem",
-            position: 2,
-            name: "Recursion",
-            item: "https://dsa-experiments.vercel.app/recursion",
-          },
-          {
-            "@type": "ListItem",
-            position: 3,
-            name: "Josephus Problem",
-            item: "https://dsa-experiments.vercel.app/recursion/josephus-problem",
-          },
-        ],
-      },
-    },
-  };
+    return res  # 0-based
 
-  // initialize people
-  const initializePeople = useCallback((numPeople) => {
-    const newPeople = Array.from({ length: numPeople }, (_, i) => ({
-      id: i + 1,
-      eliminated: false,
-      isActive: false,
-      isTarget: false,
-    }));
-    setPeople(newPeople);
-    setCurrentPosition(0);
-    setEliminationOrder([]);
-    setCurrentStep(0);
-    setSurvivor(null);
+# Recursive
+def josephus_recursive(n, k):
+    if n == 1:
+        return 0
+    return (josephus_recursive(n - 1, k) + k) % n`,
+  javascript: `// Iterative
+function josephus(n, k) {
+  let res = 0;
+  for (let i = 2; i <= n; i++) {
+    res = (res + k) % i;
+  }
+  return res; // 0-based
+}
+
+// Recursive
+function josephusRecursive(n, k) {
+  if (n === 1) return 0;
+  return (josephusRecursive(n - 1, k) + k) % n;
+}`,
+  cpp: `// Iterative
+int josephus(int n, int k) {
+  int res = 0;
+  for (int i = 2; i <= n; i++)
+    res = (res + k) % i;
+  return res; // 0-based
+}
+
+// Recursive
+int josephusRecursive(int n, int k) {
+  if (n == 1) return 0;
+  return (josephusRecursive(n - 1, k) + k) % n;
+}`,
+};
+
+function buildSteps(n, k) {
+  const steps = [];
+  const people = Array.from({ length: n }, (_, i) => ({
+    id: i + 1,
+    eliminated: false,
+  }));
+  const eliminationOrder = [];
+  let currentList = Array.from({ length: n }, (_, i) => i);
+  let pos = 0;
+
+  steps.push({
+    people: people.map((p) => ({ ...p })),
+    eliminationOrder: [],
+    currentPos: 0,
+    targetId: null,
+    line: 0,
+    explanation: `Josephus Problem: ${n} people in a circle, eliminate every ${k}-th person. J(n,k) = (J(n-1,k) + k) % n.`,
+  });
+
+  for (let round = 0; round < n - 1; round++) {
+    pos = (pos + k - 1) % currentList.length;
+    const eliminatedIdx = currentList[pos];
+    const eliminatedPerson = eliminatedIdx + 1;
+
+    // Highlight target
+    steps.push({
+      people: people.map((p) => ({ ...p })),
+      eliminationOrder: [...eliminationOrder],
+      currentPos: pos,
+      targetId: eliminatedPerson,
+      line: 3,
+      explanation: `Round ${round + 1}: Counting ${k} steps from current position → Person ${eliminatedPerson} is targeted.`,
+    });
+
+    // Eliminate
+    people[eliminatedIdx].eliminated = true;
+    eliminationOrder.push(eliminatedPerson);
+    currentList.splice(pos, 1);
+    if (pos === currentList.length) pos = 0;
+
+    steps.push({
+      people: people.map((p) => ({ ...p })),
+      eliminationOrder: [...eliminationOrder],
+      currentPos: pos,
+      targetId: null,
+      line: 4,
+      explanation: `Person ${eliminatedPerson} eliminated! ${currentList.length} people remaining.`,
+    });
+  }
+
+  // Survivor
+  const survivorIdx = currentList[0];
+  const survivor = survivorIdx + 1;
+
+  // Recursive formula verification
+  let res = 0;
+  for (let i = 2; i <= n; i++) res = (res + k) % i;
+
+  steps.push({
+    people: people.map((p) => ({ ...p })),
+    eliminationOrder: [...eliminationOrder],
+    currentPos: 0,
+    targetId: null,
+    line: 5,
+    explanation: `✅ Survivor: Person ${survivor}! Mathematical formula J(${n},${k}) = ${res + 1} (1-based).`,
+  });
+
+  return steps;
+}
+
+function getPersonPosition(index, total) {
+  const angle = (index * 2 * Math.PI) / total - Math.PI / 2;
+  const radius = Math.min(150, 100 + total * 3);
+  const x = Math.cos(angle) * radius;
+  const y = Math.sin(angle) * radius;
+  return { x, y };
+}
+
+const N_OPTIONS = [5, 6, 7, 8, 9, 10, 12, 15, 20];
+const K_OPTIONS = [2, 3, 4, 5, 6, 7, 8];
+
+export default function Josephous() {
+  const [n, setN] = useState(7);
+  const [k, setK] = useState(3);
+  const [steps, setSteps] = useState([]);
+  const [stepIdx, setStepIdx] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(800);
+  const [started, setStarted] = useState(false);
+  const timer = useRef(null);
+  const cur = steps[stepIdx] || null;
+
+  const people = cur
+    ? cur.people
+    : Array.from({ length: n }, (_, i) => ({ id: i + 1, eliminated: false }));
+  const eliminationOrder = cur?.eliminationOrder ?? [];
+  const targetId = cur?.targetId ?? null;
+
+  const reset = useCallback(() => {
+    clearInterval(timer.current);
+    setPlaying(false);
+    setStepIdx(0);
+    setStarted(false);
+    setSteps([]);
   }, []);
 
-  useEffect(() => {
-    initializePeople(n);
-  }, [n, initializePeople]);
-
-  // calculate survivor
-  const calculateSurvivor = (n, k) => {
-    if (n === 1) return 0;
-    return (calculateSurvivor(n - 1, k) + k) % n;
+  const run = (s) => {
+    setSteps(s);
+    setStepIdx(0);
+    setStarted(true);
+    setPlaying(true);
+    let idx = 0;
+    clearInterval(timer.current);
+    timer.current = setInterval(() => {
+      idx++;
+      if (idx >= s.length) {
+        clearInterval(timer.current);
+        setPlaying(false);
+        setStepIdx(s.length - 1);
+        return;
+      }
+      setStepIdx(idx);
+    }, speed);
   };
 
-  const animateStep = async (targetIndex, eliminatedPerson) => {
-    // highlighting the counting process
-    // const alivePeople = people.filter((p) => !p.eliminated);
-
-    return new Promise((resolve) => {
-      let currentIndex = currentPosition;
-      let count = 0;
-
-      const highlightInterval = setInterval(() => {
-        setPeople((prevPeople) =>
-          prevPeople.map((person, index) => ({
-            ...person,
-            isActive: index === currentIndex && !person.eliminated,
-            isTarget: false,
-          })),
-        );
-
-        // find next alive person
-        do {
-          currentIndex = (currentIndex + 1) % people.length;
-        } while (people[currentIndex].eliminated);
-
-        count++;
-
-        if (count >= k) {
-          clearInterval(highlightInterval);
-
-          // mark target for eliminaton
-          setPeople((prevPeople) =>
-            prevPeople.map((person, index) => ({
-              ...person,
-              isActive: false,
-              isTarget: index === targetIndex,
-            })),
-          );
-
-          setTimeout(() => {
-            // eliminate the person
-            setPeople((prevPeople) =>
-              prevPeople.map((person, index) => ({
-                ...person,
-                eliminated: person.eliminated ? true : index === targetIndex,
-                isTarget: false,
-              })),
-            );
-
-            setEliminationOrder((prev) => [...prev, eliminatedPerson]);
-            setCurrentStep((prev) => prev + 1);
-            setCurrentPosition(currentIndex);
-            resolve();
-          }, animationSpeed / 2);
-        }
-      }, animationSpeed / k);
-    });
-  };
-
-  const startAnimation = async () => {
-    if (isAnimating) return;
-
-    setIsAnimating(true);
-    initializePeople(n);
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    let currentPeople = Array.from({ length: n }, (_, i) => i);
-    let pos = 0;
-
-    for (let round = 0; round < n - 1; round++) {
-      pos = (pos + k - 1) % currentPeople.length;
-      const eliminatedPerson = currentPeople[pos] + 1; // +1 for 1 based index
-
-      await animateStep(currentPeople[pos], eliminatedPerson);
-
-      currentPeople.splice(pos, 1);
-      if (pos === currentPeople.length) pos = 0;
-
-      await new Promise((resolve) => setTimeout(resolve, animationSpeed / 2));
+  const togglePlay = () => {
+    if (!started) {
+      run(buildSteps(n, k));
+      return;
     }
-
-    // show survivor
-    const survivorIndex = calculateSurvivor(n, k);
-    setSurvivor(survivorIndex + 1); // +1 -> 1 based
-
-    setPeople((prevPeople) =>
-      prevPeople.map((person, index) => ({
-        ...person,
-        isActive: index === survivorIndex && !person.eliminated,
-      })),
-    );
-
-    setIsAnimating(false);
+    if (playing) {
+      clearInterval(timer.current);
+      setPlaying(false);
+    } else {
+      setPlaying(true);
+      let idx = stepIdx;
+      timer.current = setInterval(() => {
+        idx++;
+        if (idx >= steps.length) {
+          clearInterval(timer.current);
+          setPlaying(false);
+          setStepIdx(steps.length - 1);
+          return;
+        }
+        setStepIdx(idx);
+      }, speed);
+    }
   };
 
-  const reset = () => {
-    setIsAnimating(false);
-    initializePeople(n);
+  const selectN = (val) => {
+    if (started) return;
+    setN(val);
+  };
+
+  const selectK = (val) => {
+    if (started) return;
+    setK(val);
   };
 
   const getPersonColor = (person) => {
-    if (person.eliminated) return "rgb(127, 29, 29)"; // red-900
-    if (person.isTarget) return "rgb(194, 65, 12)"; // orange-700
-    if (person.isActive) return "rgb(34, 197, 94)"; // green-500
-    return "rgb(82, 82, 91)"; // neutral-600
+    if (person.eliminated) return { fill: "oklch(0.35 0.1 25 / 0.4)", stroke: "oklch(0.5 0.12 25)", text: "oklch(0.5 0.06 25)" };
+    if (targetId && person.id === targetId) return { fill: "oklch(0.65 0.18 55 / 0.5)", stroke: "oklch(0.75 0.2 55)", text: "#fff" };
+    if (eliminationOrder.length === 0 && !person.eliminated) return { fill: "oklch(0.5 0.04 240 / 0.4)", stroke: "oklch(0.4 0.06 240)", text: "oklch(0.7 0.04 230)" };
+    return { fill: CYAN, stroke: CYAN, text: "#fff" };
   };
 
-  const getPersonPosition = (index, total) => {
-    const angle = (index * 2 * Math.PI) / total - Math.PI / 2;
-    const radius = Math.min(150, 100 + total * 3);
-    const x = Math.cos(angle) * radius;
-    const y = Math.sin(angle) * radius;
-    return { x, y };
-  };
+  // For the survivor highlight on last step
+  const isLastStep = cur && stepIdx === steps.length - 1 && steps.length > 0;
 
   return (
     <>
-      <SEO data={seoData} />
-
-      <div className="min-h-screen max-w-7xl mx-auto w-full flex flex-col items-center justify-start gap-20 py-20 md:py-32 px-4 af-bg">
-        <Header />
-
-        {/* Animation */}
-        <div className="af-surface rounded-lg p-4 md:p-8 border border-neutral-800 flex-1 w-full">
-          {/* Heading */}
-          <div className="text-center mb-8">
-            <h1 className="text-3xl md:text-4xl font-bold text-white mb-2 tracking-wide">
-              Josephus Problem
-            </h1>
-            <p className="text-neutral-300 text-lg">
-              n = {n}, k = {k} | Step: {currentStep} / {n - 1}
-            </p>
-            {survivor && (
-              <p className="text-cyan-400 text-lg font-semibold mt-2">
-                Survivor: Person {survivor}
-              </p>
-            )}
-          </div>
-
-          {/* controls */}
-          <div className="flex flex-wrap justify-center items-center gap-4 mb-8">
-            <div className="flex items-center gap-2">
-              <label className="text-white font-medium">People (n):</label>
-              <Select
-                value={n.toString()}
-                onValueChange={(value) => setN(parseInt(value))}
-                disabled={isAnimating}
-              >
-                <SelectTrigger className="af-surface text-white px-3 py-1 rounded-md border border-neutral-600 focus:border-white focus:outline-none">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="af-surface border-neutral-600">
-                  {[5, 6, 7, 8, 9, 10, 12, 15, 20, 51, 100].map((num) => (
-                    <SelectItem
-                      key={num}
-                      value={num.toString()}
-                      className="text-white hover:af-surface2"
-                    >
-                      {num}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <label className="text-white font-medium">Step (k):</label>
-              <Select
-                value={k.toString()}
-                onValueChange={(value) => setK(parseInt(value))}
-                disabled={isAnimating}
-              >
-                <SelectTrigger className="af-surface text-white px-3 py-1 rounded-md border border-neutral-600 focus:border-white focus:outline-none">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="af-surface border-neutral-600">
-                  {[2, 3, 4, 5, 6, 7, 8, 12, 13, 15].map((num) => (
-                    <SelectItem
-                      key={num}
-                      value={num.toString()}
-                      className="text-white hover:af-surface2"
-                    >
-                      {num}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <SpeedControl
-              animationSpeed={animationSpeed}
-              setAnimationSpeed={setAnimationSpeed}
-              isAnimating={isAnimating}
-            />
-
-            <button
-              onClick={startAnimation}
-              disabled={isAnimating}
-              className="bg-white text-black px-6 py-2 rounded-md font-semibold hover:bg-neutral-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg"
-            >
-              {isAnimating ? "Running..." : "Start"}
-            </button>
-
-            <button
-              onClick={reset}
-              disabled={isAnimating}
-              className="af-surface2 text-white px-6 py-2 rounded-md font-semibold hover:bg-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg"
-            >
-              Reset
-            </button>
-          </div>
-
-          {/* Game Board */}
-          <div className="flex justify-center items-center mb-8 bg-black p-5 md:p-10 rounded-lg min-h-[400px]">
-            <div
-              className="relative"
-              style={{ width: "400px", height: "400px" }}
-            >
-              <svg width="400" height="400" className="inset-0">
-                {people.map((person, index) => {
-                  const pos = getPersonPosition(index, people.length);
-                  return (
-                    <g key={person.id}>
-                      <circle
-                        cx={200 + pos.x}
-                        cy={200 + pos.y}
-                        r="20"
-                        fill={getPersonColor(person)}
-                        stroke="white"
-                        strokeWidth="2"
-                        className="transition-all duration-300"
-                        opacity={person.eliminated ? 0.3 : 1}
-                      />
-                      <text
-                        x={200 + pos.x}
-                        y={200 + pos.y + 5}
-                        textAnchor="middle"
-                        className={`text-sm font-bold ${person.eliminated ? "text-neutral-300 fill-neutral-300" : "text-white fill-white"}`}
+      <SEO data={{ title: "Josephus Problem" }} />
+      <AlgoPageLayout title="Josephus Problem" category="Recursion" categoryHref="/recursion" timeComplexity="O(n)" spaceComplexity="O(1)">
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-5">
+          <div className="space-y-4">
+            {/* Config */}
+            <div className="rounded-xl border p-4" style={{ background: BG, borderColor: BORDER }}>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Parameters</p>
+              <div className="flex gap-6 flex-wrap">
+                <div>
+                  <label className="text-xs text-slate-500 mb-2 block">People (n)</label>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {N_OPTIONS.map((val) => (
+                      <button
+                        key={val}
+                        onClick={() => selectN(val)}
+                        disabled={started}
+                        className="w-9 h-9 rounded-lg text-xs font-semibold transition-all disabled:opacity-40"
+                        style={{
+                          background: n === val ? CYAN : "oklch(0.17 0.03 240)",
+                          color: n === val ? "oklch(0.1 0.02 240)" : "oklch(0.65 0.04 230)",
+                          borderWidth: 1,
+                          borderColor: n === val ? CYAN : BORDER,
+                        }}
                       >
-                        {person.id}
-                      </text>
-                    </g>
-                  );
-                })}
-              </svg>
-            </div>
-          </div>
-
-          {/* elimination Order */}
-          {eliminationOrder.length > 0 && (
-            <div className="text-center mb-6">
-              <h3 className="text-white text-lg font-semibold mb-2">
-                Elimination Order:
-              </h3>
-              <div className="flex flex-wrap justify-center gap-2">
-                {eliminationOrder.map((personId, index) => (
-                  <span
-                    key={index}
-                    className="af-surface2 text-white px-3 py-1 rounded-lg text-sm"
-                  >
-                    {personId}
-                  </span>
-                ))}
+                        {val}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 mb-2 block">Step (k)</label>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {K_OPTIONS.map((val) => (
+                      <button
+                        key={val}
+                        onClick={() => selectK(val)}
+                        disabled={started}
+                        className="w-9 h-9 rounded-lg text-xs font-semibold transition-all disabled:opacity-40"
+                        style={{
+                          background: k === val ? CYAN : "oklch(0.17 0.03 240)",
+                          color: k === val ? "oklch(0.1 0.02 240)" : "oklch(0.65 0.04 230)",
+                          borderWidth: 1,
+                          borderColor: k === val ? CYAN : BORDER,
+                        }}
+                      >
+                        {val}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
-          )}
 
-          {/* progress bar */}
-          <div className="w-full af-surface2 rounded-full h-2 mb-4">
-            <div
-              className="bg-gradient-to-r from-cyan-400 to-blue-500 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${(currentStep / (n - 1)) * 100}%` }}
-            />
+            {/* Circle Visualization */}
+            <div className="rounded-xl border p-5" style={{ background: BG, borderColor: BORDER }}>
+              <div className="flex justify-center items-center">
+                <div className="relative" style={{ width: "360px", height: "360px" }}>
+                  <svg width="360" height="360" className="inset-0">
+                    {people.map((person, index) => {
+                      const pos = getPersonPosition(index, people.length);
+                      const c = getPersonColor(person);
+                      // Highlight survivor on last step
+                      const isSurvivor = isLastStep && !person.eliminated;
+                      return (
+                        <g key={person.id} className="transition-all duration-300">
+                          <circle
+                            cx={180 + pos.x}
+                            cy={180 + pos.y}
+                            r="18"
+                            fill={isSurvivor ? CYAN : c.fill}
+                            stroke={isSurvivor ? CYAN : c.stroke}
+                            strokeWidth={isSurvivor ? 3 : 1.5}
+                            opacity={person.eliminated ? 0.25 : 1}
+                          />
+                          <text
+                            x={180 + pos.x}
+                            y={180 + pos.y + 4}
+                            textAnchor="middle"
+                            className="text-xs font-bold"
+                            fill={isSurvivor ? "oklch(0.1 0.02 240)" : c.text}
+                            opacity={person.eliminated ? 0.3 : 1}
+                          >
+                            {person.id}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                </div>
+              </div>
+
+              {/* Legend */}
+              <div className="flex justify-center gap-5 text-xs text-slate-400 mt-3">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-full" style={{ background: "oklch(0.5 0.04 240 / 0.4)", borderWidth: 1, borderColor: "oklch(0.4 0.06 240)" }} />
+                  <span>Alive</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-full" style={{ background: "oklch(0.65 0.18 55 / 0.5)", borderWidth: 1, borderColor: "oklch(0.75 0.2 55)" }} />
+                  <span>Target</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-full" style={{ background: "oklch(0.35 0.1 25 / 0.4)", borderWidth: 1, borderColor: "oklch(0.5 0.12 25)" }} />
+                  <span>Eliminated</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-full" style={{ background: CYAN, borderWidth: 2, borderColor: CYAN }} />
+                  <span>Survivor</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Elimination Order */}
+            {eliminationOrder.length > 0 && (
+              <div className="rounded-xl border p-4" style={{ background: BG, borderColor: BORDER }}>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Elimination Order</p>
+                <div className="flex flex-wrap gap-2">
+                  {eliminationOrder.map((personId, index) => (
+                    <span
+                      key={index}
+                      className="px-3 py-1 rounded-lg text-xs font-semibold"
+                      style={{ background: "oklch(0.17 0.03 240)", color: "oklch(0.65 0.04 230)", borderWidth: 1, borderColor: BORDER }}
+                    >
+                      {personId}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Controls */}
+            <div className="rounded-xl border p-4 flex flex-wrap gap-3" style={{ background: BG, borderColor: BORDER }}>
+              <button onClick={togglePlay} className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm"
+                style={{ background: CYAN, color: "oklch(0.1 0.02 240)" }}>
+                {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                {!started ? "Start" : playing ? "Pause" : "Resume"}
+              </button>
+              <button onClick={reset} className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold border text-slate-300"
+                style={{ borderColor: BORDER }}>
+                <RotateCcw className="w-4 h-4" /> Reset
+              </button>
+              <SpeedControl animationSpeed={speed} setAnimationSpeed={setSpeed} isAnimating={playing} />
+            </div>
+
+            <ExplanationPanel steps={steps.map((s) => s.explanation)} currentStep={stepIdx} totalSteps={steps.length} />
           </div>
-
-          {/* legend */}
-          <div className="flex justify-center gap-6 text-sm text-neutral-300 mb-4">
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded-full bg-neutral-600"></div>
-              <span>Alive</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded-full bg-cyan-400"></div>
-              <span>Current</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded-full bg-orange-700"></div>
-              <span>Target</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded-full bg-red-900"></div>
-              <span>Eliminated</span>
-            </div>
-          </div>
-
-          {/* formula */}
-          <div className="text-center text-neutral-300 text-sm">
-            <p>
-              The Josephus problem: n people in a circle, eliminate every k-th
-              person
-            </p>
-            <p className="mt-1 opacity-70">
-              Mathematical solution: J(n,k) = (J(n-1,k) + k) % n
-            </p>
+          <div className="h-[500px] xl:h-auto xl:min-h-[600px]">
+            <CodePanel codes={CODES} highlightLine={cur?.line ?? null} />
           </div>
         </div>
-
-        <Description dataObj={descriptionData} />
-      </div>
+      </AlgoPageLayout>
     </>
   );
 }
-
-export default JosephusProblem;

@@ -1,14 +1,78 @@
 import { useState, useRef, useCallback } from "react";
-import { AlgoFlowHeader as Header } from "../../components/Header/Header";
+import { Play, Pause, RotateCcw } from "lucide-react";
+import AlgoPageLayout from "../../components/AlgoPageLayout";
+import CodePanel from "../../components/utils/CodePanel";
+import ExplanationPanel from "../../components/utils/ExplanationPanel";
 import SpeedControl from "../../components/utils/SpeedControl";
-import Description from "../../components/utils/Description";
 import SEO from "../../components/SEO";
 
+const CYAN = "oklch(0.75 0.18 195)";
+const BG = "oklch(0.13 0.025 240)";
+const BORDER = "oklch(0.22 0.04 240)";
+
+const CODES = {
+  pseudo: `FLOYD-WARSHALL(n, dist):
+  for k = 0 to n-1:          // intermediate node
+    for i = 0 to n-1:        // source
+      for j = 0 to n-1:      // destination
+        if dist[i][k] + dist[k][j] < dist[i][j]:
+          dist[i][j] = dist[i][k] + dist[k][j]
+
+  // Negative cycle check
+  for i = 0 to n-1:
+    if dist[i][i] < 0:
+      return "Negative cycle!"
+  return dist`,
+  python: `INF = float('inf')
+
+def floyd_warshall(graph, n):
+    dist = [row[:] for row in graph]
+
+    for k in range(n):
+        for i in range(n):
+            for j in range(n):
+                if dist[i][k] + dist[k][j] < dist[i][j]:
+                    dist[i][j] = dist[i][k] + dist[k][j]
+
+    for i in range(n):
+        if dist[i][i] < 0:
+            raise ValueError("Negative cycle")
+
+    return dist`,
+  javascript: `function floydWarshall(graph, n) {
+  const INF = Infinity;
+  const dist = graph.map(r => [...r]);
+
+  for (let k = 0; k < n; k++)
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++)
+        if (dist[i][k] + dist[k][j] < dist[i][j])
+          dist[i][j] = dist[i][k] + dist[k][j];
+
+  for (let i = 0; i < n; i++)
+    if (dist[i][i] < 0)
+      throw new Error("Negative cycle");
+
+  return dist;
+}`,
+  cpp: `void floydWarshall(vector<vector<int>>& dist, int n) {
+  const int INF = 1e8;
+  for (int k = 0; k < n; k++)
+    for (int i = 0; i < n; i++)
+      for (int j = 0; j < n; j++)
+        if (dist[i][k] + dist[k][j] < dist[i][j])
+          dist[i][j] = dist[i][k] + dist[k][j];
+
+  for (int i = 0; i < n; i++)
+    if (dist[i][i] < 0)
+      throw runtime_error("Negative cycle");
+}`,
+};
+
 // ─── Constants ────────────────────────────────────────────────────────────────
-const INF = 1e8; // sentinel for "no path"
+const INF = 1e8;
 const N = 5;
 
-// Directed weighted edges: [from, to, weight]
 const DIRECTED_EDGES = [
   [0, 1, 3],
   [0, 2, 8],
@@ -21,7 +85,6 @@ const DIRECTED_EDGES = [
   [4, 3, 2],
 ];
 
-// Pentagon layout, SVG viewBox 0 0 500 420
 const GRAPH_NODES = [
   { id: 0, x: 250, y: 55 },
   { id: 1, x: 60, y: 200 },
@@ -30,36 +93,24 @@ const GRAPH_NODES = [
   { id: 4, x: 440, y: 200 },
 ];
 
-// ─── Step pre-computation (runs once, outside component) ──────────────────────
-function buildInitialDist() {
+// ─── buildSteps ──────────────────────────────────────────────────────────────
+function buildSteps() {
+  const steps = [];
   const dist = Array.from({ length: N }, () => Array(N).fill(INF));
   for (let i = 0; i < N; i++) dist[i][i] = 0;
   for (const [u, v, w] of DIRECTED_EDGES) dist[u][v] = w;
-  return dist;
-}
-
-function computeFWSteps() {
-  const steps = [];
-  const dist = buildInitialDist();
   const everUpdated = new Set();
 
   const snap = () => dist.map((r) => [...r]);
   const disp = (v) => (v >= INF ? "∞" : v);
 
   steps.push({
-    k: -1,
-    i: -1,
-    j: -1,
-    matrix: snap(),
-    updated: false,
-    oldVal: null,
-    newVal: null,
-    ikVal: null,
-    kjVal: null,
-    phase: "init",
+    k: -1, i: -1, j: -1,
+    matrix: snap(), updated: false, oldVal: null, newVal: null,
+    ikVal: null, kjVal: null, phase: "init",
     everUpdated: new Set(),
-    message:
-      "Initial matrix — direct edge weights, 0 on diagonal, ∞ where no direct path.",
+    explanation: "Initial matrix — direct edge weights, 0 on diagonal, ∞ where no direct path.",
+    line: 0,
   });
 
   for (let k = 0; k < N; k++) {
@@ -76,126 +127,80 @@ function computeFWSteps() {
           everUpdated.add(`${i}-${j}`);
         }
 
-        let message;
+        let explanation;
         if (i === j) {
-          message = `dist[${i}][${j}] = 0  (diagonal — trivial self-path)`;
+          explanation = `dist[${i}][${j}] = 0  (diagonal — trivial self-path)`;
         } else if (updated) {
-          message = `dist[${i}][${j}]: ${disp(oldVal)} → ${disp(through)}  via node ${k}  (${disp(ikVal)} + ${disp(kjVal)} < ${disp(oldVal)})  ✓ Updated`;
+          explanation = `dist[${i}][${j}]: ${disp(oldVal)} → ${disp(through)}  via node ${k}  (${disp(ikVal)} + ${disp(kjVal)} < ${disp(oldVal)})  ✓ Updated`;
         } else {
-          const why =
-            through >= INF
-              ? `path ${i}→${k}→${j} doesn't exist`
-              : `${disp(ikVal)} + ${disp(kjVal)} = ${through} ≥ ${disp(oldVal)}`;
-          message = `dist[${i}][${j}] stays ${disp(oldVal)}  —  ${why}`;
+          const why = through >= INF
+            ? `path ${i}→${k}→${j} doesn't exist`
+            : `${disp(ikVal)} + ${disp(kjVal)} = ${through} ≥ ${disp(oldVal)}`;
+          explanation = `dist[${i}][${j}] stays ${disp(oldVal)}  —  ${why}`;
         }
 
         steps.push({
-          k,
-          i,
-          j,
-          matrix: snap(),
-          updated,
-          oldVal,
-          newVal: dist[i][j],
-          ikVal,
-          kjVal,
-          phase: "running",
+          k, i, j,
+          matrix: snap(), updated, oldVal, newVal: dist[i][j],
+          ikVal, kjVal, phase: "running",
           everUpdated: new Set(everUpdated),
-          message,
+          explanation,
+          line: updated ? 7 : 5,
         });
       }
     }
   }
 
   steps.push({
-    k: -1,
-    i: -1,
-    j: -1,
-    matrix: snap(),
-    updated: false,
-    oldVal: null,
-    newVal: null,
-    ikVal: null,
-    kjVal: null,
-    phase: "done",
+    k: -1, i: -1, j: -1,
+    matrix: snap(), updated: false, oldVal: null, newVal: null,
+    ikVal: null, kjVal: null, phase: "done",
     everUpdated: new Set(everUpdated),
-    message: `All-pairs shortest paths computed — ${everUpdated.size} cells updated from the initial matrix.`,
+    explanation: `All-pairs shortest paths computed — ${everUpdated.size} cells updated from the initial matrix.`,
+    line: 10,
   });
 
   return steps;
 }
 
-const ALL_STEPS = computeFWSteps();
-const TOTAL_STEPS = ALL_STEPS.length - 1;
-
 // ─── Style helpers ────────────────────────────────────────────────────────────
 function getNodeStyle(id, step) {
-  const DEFAULT = { fill: "#262626", stroke: "#525252", text: "#9ca3af" };
+  const DEFAULT = { fill: "oklch(0.22 0.03 240)", stroke: "oklch(0.35 0.05 240)", text: "rgb(148 163 184)" };
   if (!step || step.phase !== "running") return DEFAULT;
   if (id === step.k)
-    return { fill: "#4f46e5", stroke: "#818cf8", text: "#ffffff" };
+    return { fill: "oklch(0.55 0.2 270)", stroke: "oklch(0.7 0.18 270)", text: "#ffffff" };
   if (id === step.i)
-    return { fill: "#d97706", stroke: "#fbbf24", text: "#000000" };
+    return { fill: "oklch(0.6 0.18 80)", stroke: "oklch(0.75 0.15 80)", text: "#000000" };
   if (id === step.j)
-    return { fill: "#e11d48", stroke: "#fb7185", text: "#ffffff" };
+    return { fill: "oklch(0.55 0.2 25)", stroke: "oklch(0.7 0.18 25)", text: "#ffffff" };
   return DEFAULT;
 }
 
 function getEdgeStyle(u, v, step) {
-  const DEFAULT = {
-    stroke: "#404040",
-    markerIdx: 0,
-    width: 2,
-    opacity: 0.6,
-    dash: undefined,
-  };
+  const DEFAULT = { stroke: "oklch(0.35 0.05 240)", markerIdx: 0, width: 2, opacity: 0.6, dash: undefined };
   if (!step || step.phase !== "running") return DEFAULT;
   if (u === step.i && v === step.k)
-    return {
-      stroke: "#f59e0b",
-      markerIdx: 1,
-      width: 2.5,
-      opacity: 1,
-      dash: undefined,
-    };
+    return { stroke: "oklch(0.75 0.15 80)", markerIdx: 1, width: 2.5, opacity: 1, dash: undefined };
   if (u === step.k && v === step.j)
-    return {
-      stroke: "#fb7185",
-      markerIdx: 2,
-      width: 2.5,
-      opacity: 1,
-      dash: undefined,
-    };
+    return { stroke: "oklch(0.7 0.18 25)", markerIdx: 2, width: 2.5, opacity: 1, dash: undefined };
   if (u === step.i && v === step.j)
-    return {
-      stroke: "#94a3b8",
-      markerIdx: 3,
-      width: 1.5,
-      opacity: 0.7,
-      dash: "6 3",
-    };
+    return { stroke: "oklch(0.65 0.04 230)", markerIdx: 3, width: 1.5, opacity: 0.7, dash: "6 3" };
   return DEFAULT;
 }
 
 function arrowEndpoints(n1, n2, r = 26, pad = 10) {
-  const dx = n2.x - n1.x,
-    dy = n2.y - n1.y;
+  const dx = n2.x - n1.x, dy = n2.y - n1.y;
   const len = Math.sqrt(dx * dx + dy * dy);
-  const ux = dx / len,
-    uy = dy / len;
+  const ux = dx / len, uy = dy / len;
   return {
-    x1: n1.x + ux * (r + 2),
-    y1: n1.y + uy * (r + 2),
-    x2: n2.x - ux * (r + pad),
-    y2: n2.y - uy * (r + pad),
+    x1: n1.x + ux * (r + 2), y1: n1.y + uy * (r + 2),
+    x2: n2.x - ux * (r + pad), y2: n2.y - uy * (r + pad),
   };
 }
 
 function edgeLabelPos(n1, n2, offset = 13) {
-  const mx = (n1.x + n2.x) / 2,
-    my = (n1.y + n2.y) / 2;
-  const dx = n2.x - n1.x,
-    dy = n2.y - n1.y;
+  const mx = (n1.x + n2.x) / 2, my = (n1.y + n2.y) / 2;
+  const dx = n2.x - n1.x, dy = n2.y - n1.y;
   const len = Math.sqrt(dx * dx + dy * dy);
   return { x: mx + (-dy / len) * offset, y: my + (dx / len) * offset };
 }
@@ -207,392 +212,182 @@ function getCellStyle(i, j, step) {
   const isDiag = i === j;
 
   if (isCurrent && step.updated)
-    return { bg: "#065f46", text: "#6ee7b7", bold: true };
-  if (isCurrent) return { bg: "#78350f", text: "#fcd34d", bold: true };
-  if (isDiag) return { bg: "#1c1c1c", text: "#4b5563", bold: false };
+    return { bg: "oklch(0.3 0.1 155)", text: "oklch(0.75 0.15 155)", bold: true };
+  if (isCurrent)
+    return { bg: "oklch(0.35 0.12 80)", text: "oklch(0.8 0.15 80)", bold: true };
+  if (isDiag)
+    return { bg: "oklch(0.15 0.02 240)", text: "oklch(0.35 0.04 240)", bold: false };
   if (isKAxis && wasUpdated)
-    return { bg: "#1e1b4b", text: "#a5b4fc", bold: false };
-  if (isKAxis) return { bg: "#1e1b4b", text: "#818cf8", bold: false };
-  if (wasUpdated) return { bg: "#022c22", text: "#34d399", bold: false };
-  return { bg: "#171717", text: "#6b7280", bold: false };
+    return { bg: "oklch(0.2 0.08 270)", text: "oklch(0.7 0.12 270)", bold: false };
+  if (isKAxis)
+    return { bg: "oklch(0.18 0.06 270)", text: "oklch(0.65 0.1 270)", bold: false };
+  if (wasUpdated)
+    return { bg: "oklch(0.18 0.07 155)", text: "oklch(0.7 0.13 155)", bold: false };
+  return { bg: "oklch(0.16 0.02 240)", text: "oklch(0.5 0.04 240)", bold: false };
 }
 
 const disp = (v) => (v === null || v >= INF ? "∞" : v);
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function FloydWarshall() {
-  const [currentStepIdx, setCurrentStepIdx] = useState(0);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [animationSpeed, setAnimationSpeed] = useState(800);
-  const timeoutRef = useRef(null);
+  const [steps, setSteps] = useState([]);
+  const [stepIdx, setStepIdx] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(800);
+  const [started, setStarted] = useState(false);
+  const timerRef = useRef(null);
 
-  const step = ALL_STEPS[currentStepIdx];
-
-  const stopAnimation = useCallback(() => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    setIsAnimating(false);
-  }, []);
+  const cur = steps[stepIdx] || null;
 
   const reset = useCallback(() => {
-    stopAnimation();
-    setCurrentStepIdx(0);
-  }, [stopAnimation]);
+    clearInterval(timerRef.current);
+    setPlaying(false); setStepIdx(0); setStarted(false); setSteps([]);
+  }, []);
 
-  const goPrev = useCallback(() => {
-    if (!isAnimating) setCurrentStepIdx((i) => Math.max(i - 1, 0));
-  }, [isAnimating]);
-
-  const goNext = useCallback(() => {
-    if (!isAnimating)
-      setCurrentStepIdx((i) => Math.min(i + 1, ALL_STEPS.length - 1));
-  }, [isAnimating]);
-
-  const togglePlay = useCallback(() => {
-    if (isAnimating) {
-      stopAnimation();
-      return;
-    }
-
-    let idx = currentStepIdx;
-    if (ALL_STEPS[idx]?.phase === "done") idx = 0;
-    setIsAnimating(true);
-
-    const animate = (i) => {
-      if (i >= ALL_STEPS.length) {
-        setIsAnimating(false);
-        return;
-      }
-      setCurrentStepIdx(i);
-      timeoutRef.current = setTimeout(() => animate(i + 1), animationSpeed);
-    };
-    animate(idx);
-  }, [isAnimating, currentStepIdx, stopAnimation, animationSpeed]);
-
-  // ── Render ──────────────────────────────────────────────────────────────────
-  const descriptionData = {
-    heading: "Floyd-Warshall Algorithm",
-    subheading:
-      "All-pairs shortest paths via dynamic programming — considers every node as a potential intermediate stop.",
-    summary: `<p>
-      Floyd-Warshall computes the shortest path between <em>every</em> pair of
-      nodes in a weighted directed graph. It runs three nested loops over nodes,
-      progressively refining the distance matrix by routing paths through each
-      intermediate node <strong>k</strong>.
-    </p>
-    <ul class="list-disc list-inside mt-2 space-y-1">
-      <li>Initialise <code>dist[i][j]</code> = direct edge weight, 0 on diagonal, ∞ elsewhere.</li>
-      <li>For each <strong>k</strong>: if <code>dist[i][k] + dist[k][j] &lt; dist[i][j]</code>, update it.</li>
-      <li>After n outer iterations, the matrix holds all-pairs shortest distances.</li>
-    </ul>
-    <p class="mt-2">
-      <strong>Negative-cycle detection:</strong> if any <code>dist[i][i] &lt; 0</code> after completion,
-      the graph contains a negative cycle.
-    </p>
-    <p class="mt-2">
-      <strong>Time:</strong> O(V³) &nbsp;|&nbsp; <strong>Space:</strong> O(V²).
-      Simpler to implement than running Dijkstra from every node,
-      and handles negative edge weights (without negative cycles).
-    </p>`,
-    lang: "python",
-    code: `INF = float('inf')
-
-def floyd_warshall(graph, n):
-    # graph[u][v] = weight of edge u→v, or INF
-    dist = [row[:] for row in graph]   # deep copy
-
-    for k in range(n):                 # intermediate node
-        for i in range(n):             # source
-            for j in range(n):         # destination
-                if dist[i][k] + dist[k][j] < dist[i][j]:
-                    dist[i][j] = dist[i][k] + dist[k][j]
-
-    # Negative-cycle check
-    for i in range(n):
-        if dist[i][i] < 0:
-            raise ValueError("Negative cycle detected")
-
-    return dist
-
-
-# This visualisation's graph (5 nodes)
-INF = float('inf')
-graph = [
-#        0    1    2    3    4
-    [    0,   3,   8, INF, INF],  # 0
-    [  INF,   0,   2,   5, INF],  # 1
-    [  INF, INF,   0, INF,   1],  # 2
-    [  INF, INF,   1,   0,   6],  # 3
-    [    4, INF, INF,   2,   0],  # 4
-]
-
-result = floyd_warshall(graph, 5)
-for row in result:
-    print([x if x < INF else '∞' for x in row])`,
+  const runSteps = (s) => {
+    setSteps(s); setStepIdx(0); setStarted(true); setPlaying(true);
+    let idx = 0;
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      idx++;
+      if (idx >= s.length) { clearInterval(timerRef.current); setPlaying(false); setStepIdx(s.length - 1); return; }
+      setStepIdx(idx);
+    }, speed);
   };
 
-  const seoData = {
-    title: "Floyd-Warshall Algorithm — All-Pairs Shortest Paths Visualization",
-    description:
-      "Step through the Floyd-Warshall algorithm interactively. Watch the distance matrix update as each intermediate node k relaxes paths between every pair of nodes.",
-    canonical: "https://dsa-experiments.vercel.app/graphs/floyd-warshall",
-    openGraph: {
-      title:
-        "Floyd-Warshall Algorithm — All-Pairs Shortest Paths Visualization",
-      description:
-        "Step through the Floyd-Warshall algorithm interactively. Watch the distance matrix update step by step.",
-      url: "https://dsa-experiments.vercel.app/graphs/floyd-warshall",
-      image: "/images/defaults/preview.png",
-    },
-    schema: {
-      "@context": "https://schema.org",
-      "@type": "WebPage",
-      name: "Floyd-Warshall Algorithm — All-Pairs Shortest Paths Visualization",
-      url: "https://dsa-experiments.vercel.app/graphs/floyd-warshall",
-      description:
-        "Interactive step-by-step visualization of the Floyd-Warshall all-pairs shortest path algorithm.",
-      breadcrumb: {
-        "@type": "BreadcrumbList",
-        itemListElement: [
-          {
-            "@type": "ListItem",
-            position: 1,
-            name: "Home",
-            item: "https://dsa-experiments.vercel.app",
-          },
-          {
-            "@type": "ListItem",
-            position: 2,
-            name: "Graphs",
-            item: "https://dsa-experiments.vercel.app/graphs",
-          },
-          {
-            "@type": "ListItem",
-            position: 3,
-            name: "Floyd-Warshall",
-            item: "https://dsa-experiments.vercel.app/graphs/floyd-warshall",
-          },
-        ],
-      },
-    },
+  const togglePlay = () => {
+    if (!started) { runSteps(buildSteps()); return; }
+    if (playing) { clearInterval(timerRef.current); setPlaying(false); }
+    else {
+      setPlaying(true);
+      let idx = stepIdx;
+      timerRef.current = setInterval(() => {
+        idx++;
+        if (idx >= steps.length) { clearInterval(timerRef.current); setPlaying(false); setStepIdx(steps.length - 1); return; }
+        setStepIdx(idx);
+      }, speed);
+    }
   };
 
   return (
     <>
-      <SEO data={seoData} />
-
-      <div className="min-h-screen max-w-7xl mx-auto w-full flex flex-col items-center justify-start gap-20 py-20 md:py-32 px-0 af-bg">
-        <Header />
-
-        <div className="af-surface rounded-lg p-4 md:p-8 border border-neutral-700 w-full">
-          {/* Heading */}
-          <div className="text-center mb-8">
-            <h1 className="text-3xl md:text-4xl font-bold text-white mb-2 tracking-wide">
-              Floyd-Warshall
-            </h1>
-            <p className="text-neutral-300 text-lg">
-              Step: {currentStepIdx} / {TOTAL_STEPS}
-              {step?.phase === "running" && (
-                <span className="text-neutral-500 ml-3 text-base">
-                  k = {step.k}, i = {step.i}, j = {step.j}
-                </span>
-              )}
-            </p>
-          </div>
-
-          {/* Controls */}
-          <div className="flex flex-wrap justify-center items-center gap-3 mb-8">
-            <button
-              onClick={goPrev}
-              disabled={isAnimating || currentStepIdx === 0}
-              className="af-surface2 text-white px-5 py-2 rounded-md font-semibold hover:bg-neutral-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200"
-            >
-              ← Prev
-            </button>
-
-            <SpeedControl
-              animationSpeed={animationSpeed}
-              setAnimationSpeed={setAnimationSpeed}
-              isAnimating={isAnimating}
-            />
-
-            <button
-              onClick={togglePlay}
-              className="bg-white text-black px-6 py-2 rounded-md font-semibold hover:bg-neutral-200 transition-all duration-200 shadow-lg"
-            >
-              {isAnimating
-                ? "Pause"
-                : step?.phase === "done"
-                  ? "Replay"
-                  : "Start"}
-            </button>
-
-            <button
-              onClick={reset}
-              disabled={isAnimating}
-              className="af-surface2 text-white px-6 py-2 rounded-md font-semibold hover:bg-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg"
-            >
-              Reset
-            </button>
-
-            <button
-              onClick={goNext}
-              disabled={isAnimating || currentStepIdx === ALL_STEPS.length - 1}
-              className="af-surface2 text-white px-5 py-2 rounded-md font-semibold hover:bg-neutral-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200"
-            >
-              Next →
-            </button>
-          </div>
-
-          {/* Main board */}
-          <div className="flex flex-col xl:flex-row justify-center items-start gap-6 mb-6 bg-black p-5 md:p-8 rounded-lg">
-            {/* ── Left: Graph SVG ── */}
-            <div className="w-full xl:w-96 shrink-0">
-              <p className="text-neutral-500 text-xs uppercase tracking-widest mb-3 text-center font-semibold">
+      <SEO data={{ title: "Floyd-Warshall Algorithm" }} />
+      <AlgoPageLayout
+        title="Floyd-Warshall"
+        category="Graph"
+        categoryHref="/graph"
+        timeComplexity="O(V³)"
+        spaceComplexity="O(V²)"
+      >
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-5">
+          <div className="space-y-4">
+            {/* Graph SVG */}
+            <div className="rounded-xl border p-4" style={{ background: BG, borderColor: BORDER }}>
+              <p className="text-xs text-slate-500 mb-3">
                 Graph (directed, weighted)
+                {cur?.phase === "running" && (
+                  <span className="ml-3"> — k = {cur.k}, i = {cur.i}, j = {cur.j}</span>
+                )}
               </p>
-              <svg viewBox="0 0 500 420" className="w-full h-auto">
-                <defs>
-                  {[
-                    { id: "arr-0", color: "#525252" },
-                    { id: "arr-1", color: "#f59e0b" },
-                    { id: "arr-2", color: "#fb7185" },
-                    { id: "arr-3", color: "#94a3b8" },
-                  ].map(({ id, color }) => (
-                    <marker
-                      key={id}
-                      id={id}
-                      markerWidth="8"
-                      markerHeight="6"
-                      refX="7"
-                      refY="3"
-                      orient="auto"
-                    >
-                      <polygon points="0 0, 8 3, 0 6" fill={color} />
-                    </marker>
-                  ))}
-                </defs>
+              <div className="overflow-x-auto">
+                <svg viewBox="0 0 500 420" className="w-full h-auto" style={{ maxWidth: 500 }}>
+                  <defs>
+                    {[
+                      { id: "arr-0", color: "oklch(0.35 0.05 240)" },
+                      { id: "arr-1", color: "oklch(0.75 0.15 80)" },
+                      { id: "arr-2", color: "oklch(0.7 0.18 25)" },
+                      { id: "arr-3", color: "oklch(0.65 0.04 230)" },
+                    ].map(({ id, color }) => (
+                      <marker key={id} id={id} markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                        <polygon points="0 0, 8 3, 0 6" fill={color} />
+                      </marker>
+                    ))}
+                  </defs>
 
-                {DIRECTED_EDGES.map(([u, v, w]) => {
-                  const nu = GRAPH_NODES[u];
-                  const nv = GRAPH_NODES[v];
-                  const ep = arrowEndpoints(nu, nv);
-                  const lp = edgeLabelPos(nu, nv);
-                  const sty = getEdgeStyle(u, v, step);
-                  return (
-                    <g key={`${u}-${v}`}>
-                      <line
-                        x1={ep.x1}
-                        y1={ep.y1}
-                        x2={ep.x2}
-                        y2={ep.y2}
-                        stroke={sty.stroke}
-                        strokeWidth={sty.width}
-                        strokeOpacity={sty.opacity}
-                        strokeDasharray={sty.dash}
-                        markerEnd={`url(#arr-${sty.markerIdx})`}
-                        className="transition-all duration-200"
-                      />
-                      <text
-                        x={lp.x}
-                        y={lp.y}
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        fill={sty.stroke}
-                        fontSize={11}
-                        fontFamily="monospace"
-                        className="select-none transition-all duration-200"
-                        fillOpacity={sty.opacity}
-                      >
-                        {w}
-                      </text>
-                    </g>
-                  );
-                })}
+                  {DIRECTED_EDGES.map(([u, v, w]) => {
+                    const nu = GRAPH_NODES[u];
+                    const nv = GRAPH_NODES[v];
+                    const ep = arrowEndpoints(nu, nv);
+                    const lp = edgeLabelPos(nu, nv);
+                    const sty = getEdgeStyle(u, v, cur);
+                    return (
+                      <g key={`${u}-${v}`}>
+                        <line
+                          x1={ep.x1} y1={ep.y1} x2={ep.x2} y2={ep.y2}
+                          stroke={sty.stroke} strokeWidth={sty.width}
+                          strokeOpacity={sty.opacity} strokeDasharray={sty.dash}
+                          markerEnd={`url(#arr-${sty.markerIdx})`}
+                          className="transition-all duration-200"
+                        />
+                        <text
+                          x={lp.x} y={lp.y} textAnchor="middle" dominantBaseline="central"
+                          fill={sty.stroke} fontSize={11} fontFamily="monospace"
+                          className="select-none transition-all duration-200"
+                          fillOpacity={sty.opacity}
+                        >
+                          {w}
+                        </text>
+                      </g>
+                    );
+                  })}
 
-                {GRAPH_NODES.map((node) => {
-                  const sty = getNodeStyle(node.id, step);
-                  return (
-                    <g key={node.id}>
-                      <circle
-                        cx={node.x}
-                        cy={node.y}
-                        r={26}
-                        fill={sty.fill}
-                        stroke={sty.stroke}
-                        strokeWidth={2}
-                        className="transition-all duration-300"
-                      />
-                      <text
-                        x={node.x}
-                        y={node.y}
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        fill={sty.text}
-                        fontSize={15}
-                        fontWeight="700"
-                        fontFamily="monospace"
-                        className="select-none"
-                      >
-                        {node.id}
-                      </text>
-                    </g>
-                  );
-                })}
-              </svg>
+                  {GRAPH_NODES.map((node) => {
+                    const sty = getNodeStyle(node.id, cur);
+                    return (
+                      <g key={node.id}>
+                        <circle
+                          cx={node.x} cy={node.y} r={26}
+                          fill={sty.fill} stroke={sty.stroke} strokeWidth={2}
+                          className="transition-all duration-300"
+                        />
+                        <text
+                          x={node.x} y={node.y} textAnchor="middle" dominantBaseline="central"
+                          fill={sty.text} fontSize={15} fontWeight="700" fontFamily="monospace"
+                          className="select-none"
+                        >
+                          {node.id}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
 
-              {/* Node role legend (only when running) */}
-              {step?.phase === "running" && (
+              {/* Node role legend */}
+              {cur?.phase === "running" && (
                 <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 mt-3">
                   {[
-                    {
-                      color: "#4f46e5",
-                      label: `k = ${step.k}  (intermediate)`,
-                    },
-                    { color: "#d97706", label: `i = ${step.i}  (source row)` },
-                    { color: "#e11d48", label: `j = ${step.j}  (dest col)` },
+                    { color: "oklch(0.55 0.2 270)", label: `k = ${cur.k}  (intermediate)` },
+                    { color: "oklch(0.6 0.18 80)", label: `i = ${cur.i}  (source row)` },
+                    { color: "oklch(0.55 0.2 25)", label: `j = ${cur.j}  (dest col)` },
                   ].map((l) => (
                     <div key={l.label} className="flex items-center gap-1.5">
-                      <div
-                        className="w-3 h-3 rounded-full shrink-0"
-                        style={{ backgroundColor: l.color }}
-                      />
-                      <span className="text-neutral-400 text-xs font-mono">
-                        {l.label}
-                      </span>
+                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: l.color }} />
+                      <span className="text-slate-500 text-xs font-mono">{l.label}</span>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* ── Right: Distance Matrix ── */}
-            <div className="flex-1 w-full">
-              <p className="text-neutral-500 text-xs uppercase tracking-widest mb-3 text-center font-semibold">
+            {/* Distance Matrix */}
+            <div className="rounded-xl border p-4 overflow-x-auto" style={{ background: BG, borderColor: BORDER }}>
+              <p className="text-xs text-slate-500 mb-3">
                 Distance Matrix
-                {step?.phase === "running" ? ` — outer loop k = ${step.k}` : ""}
+                {cur?.phase === "running" ? ` — outer loop k = ${cur.k}` : ""}
               </p>
-
-              <div className="overflow-x-auto flex justify-center">
+              <div className="flex justify-center">
                 <table className="border-collapse font-mono text-sm">
-                  {/* Column headers */}
                   <thead>
                     <tr>
-                      <th className="w-10 h-10 text-neutral-600 font-normal text-xs">
-                        i \\ j
-                      </th>
+                      <th className="w-10 h-10 font-normal text-xs" style={{ color: "oklch(0.4 0.04 240)" }}>i \ j</th>
                       {Array.from({ length: N }, (_, j) => (
                         <th
                           key={j}
                           className="w-14 h-10 text-center transition-colors duration-200"
                           style={{
-                            color:
-                              step?.phase === "running" && j === step.k
-                                ? "#818cf8"
-                                : "#6b7280",
-                            fontWeight:
-                              step?.phase === "running" && j === step.k
-                                ? "700"
-                                : "400",
+                            color: cur?.phase === "running" && j === cur.k ? "oklch(0.65 0.1 270)" : "oklch(0.5 0.04 240)",
+                            fontWeight: cur?.phase === "running" && j === cur.k ? "700" : "400",
                           }}
                         >
                           {j}
@@ -603,31 +398,23 @@ for row in result:
                   <tbody>
                     {Array.from({ length: N }, (_, i) => (
                       <tr key={i}>
-                        {/* Row header */}
                         <td
                           className="w-10 h-12 text-center transition-colors duration-200"
                           style={{
-                            color:
-                              step?.phase === "running" && i === step.k
-                                ? "#818cf8"
-                                : "#6b7280",
-                            fontWeight:
-                              step?.phase === "running" && i === step.k
-                                ? "700"
-                                : "400",
+                            color: cur?.phase === "running" && i === cur.k ? "oklch(0.65 0.1 270)" : "oklch(0.5 0.04 240)",
+                            fontWeight: cur?.phase === "running" && i === cur.k ? "700" : "400",
                           }}
                         >
                           {i}
                         </td>
-
                         {Array.from({ length: N }, (_, j) => {
-                          const val = step?.matrix?.[i]?.[j] ?? INF;
-                          const cs = getCellStyle(i, j, step);
+                          const val = cur?.matrix?.[i]?.[j] ?? INF;
+                          const cs = getCellStyle(i, j, cur);
                           return (
                             <td
                               key={j}
                               style={{ backgroundColor: cs.bg, color: cs.text }}
-                              className={`text-center w-14 h-12 border border-neutral-800 transition-all duration-200 text-base ${cs.bold ? "font-bold" : ""}`}
+                              className={`text-center w-14 h-12 border transition-all duration-200 text-base ${cs.bold ? "font-bold" : ""}`}
                             >
                               {val >= INF ? "∞" : val}
                             </td>
@@ -642,14 +429,10 @@ for row in result:
               {/* Matrix legend */}
               <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 mt-5">
                 {[
-                  { bg: "#78350f", text: "#fcd34d", label: "Evaluating" },
-                  { bg: "#065f46", text: "#6ee7b7", label: "Updated ✓" },
-                  { bg: "#1e1b4b", text: "#818cf8", label: "k row / col" },
-                  {
-                    bg: "#022c22",
-                    text: "#34d399",
-                    label: "Previously updated",
-                  },
+                  { bg: "oklch(0.35 0.12 80)", text: "oklch(0.8 0.15 80)", label: "Evaluating" },
+                  { bg: "oklch(0.3 0.1 155)", text: "oklch(0.75 0.15 155)", label: "Updated ✓" },
+                  { bg: "oklch(0.18 0.06 270)", text: "oklch(0.65 0.1 270)", label: "k row / col" },
+                  { bg: "oklch(0.18 0.07 155)", text: "oklch(0.7 0.13 155)", label: "Previously updated" },
                 ].map((l) => (
                   <div key={l.label} className="flex items-center gap-2">
                     <div
@@ -658,82 +441,66 @@ for row in result:
                     >
                       3
                     </div>
-                    <span className="text-neutral-400 text-xs">{l.label}</span>
+                    <span className="text-slate-500 text-xs">{l.label}</span>
                   </div>
                 ))}
               </div>
             </div>
-          </div>
 
-          {/* Step info bar */}
-          <div className="af-bg rounded-lg px-5 py-4 mb-4 border border-neutral-700">
-            {step?.phase === "running" && (
-              <p className="text-indigo-400 text-xs uppercase tracking-widest mb-1 text-center font-semibold">
-                Outer loop: k = {step.k} (node {step.k} as intermediate)
-              </p>
-            )}
-            <p
-              className={`text-sm font-mono text-center ${
-                step?.updated
-                  ? "text-emerald-400"
-                  : step?.phase === "done"
-                    ? "text-white"
-                    : "text-neutral-300"
-              }`}
-            >
-              {step?.message ?? ""}
-            </p>
-
-            {/* Formula breakdown — only when there's something non-trivial to show */}
-            {step?.phase === "running" && step.i !== step.j && (
-              <div className="flex justify-center items-center gap-2 mt-2 font-mono text-xs text-neutral-500 flex-wrap">
-                <span>
-                  dist[{step.i}][{step.k}] ={" "}
-                  <span className="text-amber-400">{disp(step.ikVal)}</span>
-                </span>
-                <span className="text-neutral-700">+</span>
-                <span>
-                  dist[{step.k}][{step.j}] ={" "}
-                  <span className="text-rose-400">{disp(step.kjVal)}</span>
-                </span>
-                <span className="text-neutral-700">=</span>
-                <span
-                  className={
-                    step.updated
-                      ? "text-emerald-400 font-bold"
-                      : "text-neutral-400"
-                  }
-                >
-                  {step.ikVal >= INF || step.kjVal >= INF
-                    ? "∞"
-                    : step.ikVal + step.kjVal}
-                </span>
-                <span className="text-neutral-700">
-                  {step.updated ? "< " : "≥ "}
-                </span>
-                <span>
-                  dist[{step.i}][{step.j}] = {disp(step.oldVal)}
-                </span>
+            {/* Formula breakdown */}
+            {cur?.phase === "running" && cur.i !== cur.j && (
+              <div className="rounded-xl border p-4" style={{ background: BG, borderColor: BORDER }}>
+                <p className="text-xs text-slate-500 mb-2">Formula Breakdown</p>
+                <div className="flex justify-center items-center gap-2 font-mono text-xs flex-wrap">
+                  <span style={{ color: "oklch(0.5 0.04 240)" }}>
+                    dist[{cur.i}][{cur.k}] ={" "}
+                    <span style={{ color: "oklch(0.75 0.15 80)" }}>{disp(cur.ikVal)}</span>
+                  </span>
+                  <span style={{ color: "oklch(0.35 0.04 240)" }}>+</span>
+                  <span style={{ color: "oklch(0.5 0.04 240)" }}>
+                    dist[{cur.k}][{cur.j}] ={" "}
+                    <span style={{ color: "oklch(0.7 0.18 25)" }}>{disp(cur.kjVal)}</span>
+                  </span>
+                  <span style={{ color: "oklch(0.35 0.04 240)" }}>=</span>
+                  <span
+                    style={{
+                      color: cur.updated ? "oklch(0.75 0.15 155)" : "oklch(0.55 0.04 240)",
+                      fontWeight: cur.updated ? "bold" : "normal",
+                    }}
+                  >
+                    {cur.ikVal >= INF || cur.kjVal >= INF ? "∞" : cur.ikVal + cur.kjVal}
+                  </span>
+                  <span style={{ color: "oklch(0.35 0.04 240)" }}>
+                    {cur.updated ? "< " : "≥ "}
+                  </span>
+                  <span style={{ color: "oklch(0.5 0.04 240)" }}>
+                    dist[{cur.i}][{cur.j}] = {disp(cur.oldVal)}
+                  </span>
+                </div>
               </div>
             )}
-          </div>
 
-          {/* Progress bar */}
-          <div className="w-full af-surface2 rounded-full h-2 mb-4">
-            <div
-              className="bg-gradient-to-r from-cyan-400 to-blue-500 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${(currentStepIdx / TOTAL_STEPS) * 100}%` }}
-            />
-          </div>
+            {/* Controls */}
+            <div className="rounded-xl border p-4 flex flex-wrap gap-3" style={{ background: BG, borderColor: BORDER }}>
+              <button onClick={togglePlay} className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm"
+                style={{ background: CYAN, color: "oklch(0.1 0.02 240)" }}>
+                {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                {!started ? "Start" : playing ? "Pause" : "Resume"}
+              </button>
+              <button onClick={reset} className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold border text-slate-300"
+                style={{ borderColor: BORDER }}>
+                <RotateCcw className="w-4 h-4" /> Reset
+              </button>
+              <SpeedControl animationSpeed={speed} setAnimationSpeed={setSpeed} isAnimating={playing} />
+            </div>
 
-          <div className="text-center text-neutral-300 text-sm opacity-60">
-            Time: O(V³) · Space: O(V²) · Handles negative edges (no negative
-            cycles)
+            <ExplanationPanel steps={steps.map(s => s.explanation)} currentStep={stepIdx} totalSteps={steps.length} />
+          </div>
+          <div className="h-[500px] xl:h-auto">
+            <CodePanel codes={CODES} highlightLine={cur?.line ?? null} />
           </div>
         </div>
-
-        <Description dataObj={descriptionData} />
-      </div>
+      </AlgoPageLayout>
     </>
   );
 }

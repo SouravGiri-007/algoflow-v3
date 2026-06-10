@@ -1,222 +1,267 @@
-import React, { useState, useEffect } from "react";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Play,
-  RotateCcw,
-  Plus,
-  Minus,
-  Search,
-} from "lucide-react";
-import { AlgoFlowHeader as Header } from "../../components/Header/Header";
+import { useState, useRef, useCallback } from "react";
+import { Play, Pause, RotateCcw } from "lucide-react";
+import AlgoPageLayout from "../../components/AlgoPageLayout";
+import CodePanel from "../../components/utils/CodePanel";
+import ExplanationPanel from "../../components/utils/ExplanationPanel";
 import SpeedControl from "../../components/utils/SpeedControl";
-import Description from "../../components/utils/Description";
 import SEO from "../../components/SEO";
 
-export default function DynamicArray() {
-  const [array, setArray] = useState([5, 3, 8, 1, 9]);
-  const [capacity, setCapacity] = useState(5);
-  const [animationSpeed, setAnimationSpeed] = useState(800);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [currentStep, setCurrentStep] = useState(0);
-  const [totalSteps, setTotalSteps] = useState(0);
-  const [animationSteps, setAnimationSteps] = useState([]);
-  const [inputValue, setInputValue] = useState("");
-  const [highlightIndices, setHighlightIndices] = useState([]);
-  const [message, setMessage] = useState("");
-  const [showStepControls, setShowStepControls] = useState(false);
-  const [showNewArray, setShowNewArray] = useState(false);
-  const [newArray, setNewArray] = useState([]);
-  const [newCapacity, setNewCapacity] = useState(0);
-  const [copyingIndex, setCopyingIndex] = useState(-1);
+const CYAN = "oklch(0.75 0.18 195)";
+const BG = "oklch(0.13 0.025 240)";
+const BORDER = "oklch(0.22 0.04 240)";
 
-  const seoData = {
-    title: "Dynamic Array Resizing Visualization - Algorithm Visualizer",
-    description:
-      "Interactive visualization of dynamic array resizing operations showing how arrays double in size and copy elements when capacity is exceeded.",
-    canonical: "/arrays/dynamic-array",
-    openGraph: {
-      title: "Dynamic Array Resizing Visualization",
-      description:
-        "Learn how dynamic arrays resize and copy elements through interactive animations",
-      url: "/arrays/dynamic-array",
-      type: "website",
-    },
-    twitter: {
-      card: "summary",
-      title: "Dynamic Array Resizing",
-      description: "Interactive animations for array resizing operations",
-    },
-  };
+const CODES = {
+  pseudo: `DYNAMIC_ARRAY_INSERT(arr, size, capacity, value):
+  IF size >= capacity:
+    newCapacity ← capacity × 2
+    newArr ← new array of size newCapacity
 
-  const generateResizeSteps = (value) => {
-    const steps = [];
-    const currentArray = [...array];
-    const currentCap = capacity;
+    FOR i ← 0 TO size - 1:
+      newArr[i] ← arr[i]
 
-    // Step 1: Show trying to insert when array is full
-    steps.push({
-      array: [...currentArray],
-      capacity: currentCap,
-      newArray: [],
-      newCapacity: 0,
-      showNewArray: false,
-      highlightIndices: [],
-      copyingIndex: -1,
-      message: `Trying to insert ${value}. Array is full (${currentArray.length}/${currentCap})!`,
-    });
+    arr ← newArr
+    capacity ← newCapacity
 
-    // Step 2: Create new array with double capacity
-    const newCap = currentCap * 2;
-    steps.push({
-      array: [...currentArray],
-      capacity: currentCap,
-      newArray: new Array(newCap).fill(null),
-      newCapacity: newCap,
-      showNewArray: true,
-      highlightIndices: [],
-      copyingIndex: -1,
-      message: `Creating new array with double capacity: ${newCap}`,
-    });
+  arr[size] ← value
+  size ← size + 1
+  RETURN arr, size, capacity`,
+  python: `def dynamic_array_insert(arr, capacity, value):
+    if len(arr) >= capacity:
+        new_capacity = capacity * 2
+        new_arr = [None] * new_capacity
+        for i in range(len(arr)):
+            new_arr[i] = arr[i]
+        arr = new_arr
+        capacity = new_capacity
 
-    // Step 3-N: Copy each element one by one
-    for (let i = 0; i < currentArray.length; i++) {
-      const tempNewArray = new Array(newCap).fill(null);
-      for (let j = 0; j <= i; j++) {
-        tempNewArray[j] = currentArray[j];
-      }
-
-      steps.push({
-        array: [...currentArray],
-        capacity: currentCap,
-        newArray: [...tempNewArray],
-        newCapacity: newCap,
-        showNewArray: true,
-        highlightIndices: [i],
-        copyingIndex: i,
-        message: `Copying element ${currentArray[i]} to position ${i} in new array`,
-      });
+    arr.append(value)
+    return arr, capacity`,
+  javascript: `function dynamicArrayInsert(arr, capacity, value) {
+  if (arr.length >= capacity) {
+    const newCapacity = capacity * 2;
+    const newArr = new Array(newCapacity).fill(null);
+    for (let i = 0; i < arr.length; i++) {
+      newArr[i] = arr[i];
     }
+    arr = newArr;
+    capacity = newCapacity;
+  }
 
-    // Step N+1: Add new element
-    const finalArray = [...currentArray, parseInt(value)];
+  arr[arr.length] = value;
+  return { arr, capacity };
+}`,
+  cpp: `void dynamicArrayInsert(int*& arr, int& size, int& capacity, int value) {
+    if (size >= capacity) {
+        int newCapacity = capacity * 2;
+        int* newArr = new int[newCapacity];
+        for (int i = 0; i < size; i++) {
+            newArr[i] = arr[i];
+        }
+        delete[] arr;
+        arr = newArr;
+        capacity = newCapacity;
+    }
+    arr[size++] = value;
+}`,
+};
+
+function buildSteps(arr, capacity, value) {
+  const steps = [];
+  const currentArray = [...arr];
+  const currentCap = capacity;
+  const numVal = parseInt(value);
+
+  // Step 1: Show trying to insert when array is full
+  steps.push({
+    array: [...currentArray],
+    capacity: currentCap,
+    newArray: [],
+    newCapacity: 0,
+    showNewArray: false,
+    highlightIndices: [],
+    copyingIndex: -1,
+    line: 1,
+    explanation: `Trying to insert ${numVal}. Array is full (${currentArray.length}/${currentCap})! Resize needed.`,
+  });
+
+  // Step 2: Create new array with double capacity
+  const newCap = currentCap * 2;
+  steps.push({
+    array: [...currentArray],
+    capacity: currentCap,
+    newArray: new Array(newCap).fill(null),
+    newCapacity: newCap,
+    showNewArray: true,
+    highlightIndices: [],
+    copyingIndex: -1,
+    line: 3,
+    explanation: `Creating new array with double capacity: ${newCap}.`,
+  });
+
+  // Step 3-N: Copy each element one by one
+  for (let i = 0; i < currentArray.length; i++) {
     const tempNewArray = new Array(newCap).fill(null);
-    for (let j = 0; j < finalArray.length; j++) {
-      tempNewArray[j] = finalArray[j];
+    for (let j = 0; j <= i; j++) {
+      tempNewArray[j] = currentArray[j];
     }
-
     steps.push({
       array: [...currentArray],
       capacity: currentCap,
       newArray: [...tempNewArray],
       newCapacity: newCap,
       showNewArray: true,
-      highlightIndices: [finalArray.length - 1],
-      copyingIndex: finalArray.length - 1,
-      message: `Inserting new element ${value} at position ${finalArray.length - 1}`,
+      highlightIndices: [i],
+      copyingIndex: i,
+      line: 6,
+      explanation: `Copying element ${currentArray[i]} to position ${i} in new array.`,
     });
+  }
 
-    // Step N+2: Replace old array
-    steps.push({
-      array: [...finalArray],
-      capacity: newCap,
-      newArray: [],
-      newCapacity: 0,
-      showNewArray: false,
-      highlightIndices: [finalArray.length - 1],
-      copyingIndex: -1,
-      message: `Replacing old array. New capacity: ${newCap}, Size: ${finalArray.length}`,
-    });
+  // Step N+1: Add new element
+  const finalArray = [...currentArray, numVal];
+  const tempNewArray = new Array(newCap).fill(null);
+  for (let j = 0; j < finalArray.length; j++) {
+    tempNewArray[j] = finalArray[j];
+  }
+  steps.push({
+    array: [...currentArray],
+    capacity: currentCap,
+    newArray: [...tempNewArray],
+    newCapacity: newCap,
+    showNewArray: true,
+    highlightIndices: [finalArray.length - 1],
+    copyingIndex: finalArray.length - 1,
+    line: 9,
+    explanation: `Inserting new element ${numVal} at position ${finalArray.length - 1}.`,
+  });
 
-    // Final step
-    steps.push({
-      array: [...finalArray],
-      capacity: newCap,
-      newArray: [],
-      newCapacity: 0,
-      showNewArray: false,
-      highlightIndices: [],
-      copyingIndex: -1,
-      message: `Dynamic array resize complete! Ready for more insertions.`,
-    });
+  // Step N+2: Replace old array
+  steps.push({
+    array: [...finalArray],
+    capacity: newCap,
+    newArray: [],
+    newCapacity: 0,
+    showNewArray: false,
+    highlightIndices: [finalArray.length - 1],
+    copyingIndex: -1,
+    line: 10,
+    explanation: `Replacing old array. New capacity: ${newCap}, Size: ${finalArray.length}.`,
+  });
 
-    return steps;
-  };
+  // Final step
+  steps.push({
+    array: [...finalArray],
+    capacity: newCap,
+    newArray: [],
+    newCapacity: 0,
+    showNewArray: false,
+    highlightIndices: [],
+    copyingIndex: -1,
+    line: 12,
+    explanation: `Dynamic array resize complete! Ready for more insertions.`,
+  });
 
-  const startAnimation = () => {
+  return steps;
+}
+
+const INITIAL_ARRAY = [5, 3, 8, 1, 9];
+const INITIAL_CAPACITY = 5;
+
+export default function DynamicArray() {
+  const [array, setArray] = useState([...INITIAL_ARRAY]);
+  const [capacity, setCapacity] = useState(INITIAL_CAPACITY);
+  const [inputValue, setInputValue] = useState("");
+  const [steps, setSteps] = useState([]);
+  const [stepIdx, setStepIdx] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(800);
+  const [started, setStarted] = useState(false);
+  const timer = useRef(null);
+  const cur = steps[stepIdx] || null;
+
+  // Derived display state
+  const displayArray = cur ? cur.array : array;
+  const displayCapacity = cur ? cur.capacity : capacity;
+  const displayNewArray = cur ? cur.newArray : [];
+  const displayNewCapacity = cur ? cur.newCapacity : 0;
+  const displayShowNewArray = cur ? cur.showNewArray : false;
+  const displayHighlightIndices = cur ? cur.highlightIndices : [];
+  const displayCopyingIndex = cur ? cur.copyingIndex : -1;
+
+  const reset = useCallback(() => {
+    clearInterval(timer.current);
+    setPlaying(false);
+    setStepIdx(0);
+    setStarted(false);
+    setSteps([]);
+    setArray([...INITIAL_ARRAY]);
+    setCapacity(INITIAL_CAPACITY);
+    setInputValue("");
+  }, []);
+
+  const handleInsert = () => {
     if (!inputValue) return;
-    if (array.length < capacity) {
-      // Simple insertion without resize
-      const newArr = [...array, parseInt(inputValue)];
+    const numVal = parseInt(inputValue);
+    if (isNaN(numVal)) return;
+
+    // If not full, do simple insert without animation
+    if (array.length < capacity && !started) {
+      const newArr = [...array, numVal];
       setArray(newArr);
-      setMessage(
-        `Inserted ${inputValue}. No resize needed (${newArr.length}/${capacity})`,
-      );
       setInputValue("");
       return;
     }
 
-    const steps = generateResizeSteps(inputValue);
-
-    setAnimationSteps(steps);
-    setTotalSteps(steps.length);
-    setCurrentStep(0);
-    setIsAnimating(true);
-    setShowStepControls(false);
-
-    let stepIndex = 0;
-    const interval = setInterval(() => {
-      if (stepIndex < steps.length) {
-        const step = steps[stepIndex];
-        setArray(step.array);
-        setCapacity(step.capacity);
-        setNewArray(step.newArray);
-        setNewCapacity(step.newCapacity);
-        setShowNewArray(step.showNewArray);
-        setHighlightIndices(step.highlightIndices);
-        setCopyingIndex(step.copyingIndex);
-        setMessage(step.message);
-        setCurrentStep(stepIndex + 1);
-        stepIndex++;
-      } else {
-        clearInterval(interval);
-        setIsAnimating(false);
-        setHighlightIndices([]);
-        setCopyingIndex(-1);
-        setShowStepControls(true);
+    // If full, animate resize
+    const s = buildSteps(array, capacity, inputValue);
+    setSteps(s);
+    setStepIdx(0);
+    setStarted(true);
+    setPlaying(true);
+    let idx = 0;
+    clearInterval(timer.current);
+    timer.current = setInterval(() => {
+      idx++;
+      if (idx >= s.length) {
+        clearInterval(timer.current);
+        setPlaying(false);
+        setStepIdx(s.length - 1);
+        // Update base state to final
+        const finalStep = s[s.length - 1];
+        setArray([...finalStep.array]);
+        setCapacity(finalStep.capacity);
         setInputValue("");
+        return;
       }
-    }, animationSpeed);
+      setStepIdx(idx);
+    }, speed);
   };
 
-  const reset = () => {
-    setArray([5, 3, 8, 1, 9]);
-    setCapacity(5);
-    setNewArray([]);
-    setNewCapacity(0);
-    setShowNewArray(false);
-    setHighlightIndices([]);
-    setCopyingIndex(-1);
-    setMessage("");
-    setCurrentStep(0);
-    setTotalSteps(0);
-    setInputValue("");
-    setShowStepControls(false);
-  };
-
-  const navigateStep = (direction) => {
-    const newStep = currentStep + direction;
-    if (newStep >= 0 && newStep < animationSteps.length) {
-      setCurrentStep(newStep);
-      const step = animationSteps[newStep];
-      setArray(step.array);
-      setCapacity(step.capacity);
-      setNewArray(step.newArray);
-      setNewCapacity(step.newCapacity);
-      setShowNewArray(step.showNewArray);
-      setHighlightIndices(step.highlightIndices);
-      setCopyingIndex(step.copyingIndex);
-      setMessage(step.message);
+  const togglePlay = () => {
+    if (!started) {
+      handleInsert();
+      return;
+    }
+    if (playing) {
+      clearInterval(timer.current);
+      setPlaying(false);
+    } else {
+      setPlaying(true);
+      let idx = stepIdx;
+      timer.current = setInterval(() => {
+        idx++;
+        if (idx >= steps.length) {
+          clearInterval(timer.current);
+          setPlaying(false);
+          setStepIdx(steps.length - 1);
+          const finalStep = steps[steps.length - 1];
+          setArray([...finalStep.array]);
+          setCapacity(finalStep.capacity);
+          setInputValue("");
+          return;
+        }
+        setStepIdx(idx);
+      }, speed);
     }
   };
 
@@ -225,203 +270,195 @@ export default function DynamicArray() {
     for (let i = 0; i < cap; i++) {
       const value = i < arr.length ? arr[i] : null;
       const isEmpty = value === null;
-      const isHighlighted = highlightIndices.includes(i);
-      const isCopying = copyingIndex === i;
+      const isHighlighted = displayHighlightIndices.includes(i) && (isNew || !displayShowNewArray);
+      const isHighlightedInNew = displayHighlightIndices.includes(i) && isNew;
+      const isCopying = displayCopyingIndex === i && (isNew || !displayShowNewArray);
+      const isCopyingInNew = displayCopyingIndex === i && isNew;
+      const active = isHighlighted || isHighlightedInNew || isCopying || isCopyingInNew;
+
+      let bgColor, borderColorVal, textColor;
+      if (isEmpty) {
+        bgColor = "oklch(0.15 0.03 240)";
+        borderColorVal = "oklch(0.25 0.04 240)";
+        textColor = "oklch(0.35 0.04 240)";
+      } else if (active) {
+        bgColor = "oklch(0.75 0.18 195 / 0.2)";
+        borderColorVal = CYAN;
+        textColor = "#fff";
+      } else if (isNew && !isEmpty) {
+        bgColor = "oklch(0.22 0.05 240)";
+        borderColorVal = "oklch(0.4 0.06 240)";
+        textColor = "rgb(203 213 225)";
+      } else if (!isEmpty) {
+        bgColor = "oklch(0.2 0.04 240)";
+        borderColorVal = "oklch(0.35 0.05 240)";
+        textColor = "rgb(203 213 225)";
+      }
 
       slots.push(
-        <div
-          key={`${isNew ? "new" : "old"}-${i}`}
-          className="flex flex-col items-center gap-2"
-        >
+        <div key={`${isNew ? "new" : "old"}-${i}`} className="flex flex-col items-center gap-1">
           <div
-            className={`w-14 h-14 flex items-center justify-center rounded-xl font-bold text-lg transition-all duration-500 border-2 ${
-              isEmpty
-                ? "af-surface2 border-neutral-600 text-neutral-500"
-                : isHighlighted
-                  ? "bg-lime-400 border-lime-300 text-black scale-110 shadow-lg shadow-lime-400/50"
-                  : isCopying
-                    ? "bg-cyan-400 border-green-400 text-white scale-105 shadow-lg shadow-green-500/50"
-                    : "bg-gradient-to-br from-white to-gray-100 border-gray-300 text-black shadow-md"
-            }`}
+            className="w-12 h-12 flex items-center justify-center rounded-lg font-bold text-sm border transition-all duration-300"
+            style={{
+              background: bgColor,
+              borderColor: borderColorVal,
+              color: textColor,
+              transform: active ? "scale(1.1)" : "scale(1)",
+            }}
           >
             {!isEmpty ? value : ""}
           </div>
-          <div className="text-neutral-400 text-xs">[{i}]</div>
-        </div>,
+          <span className="text-xs text-slate-600">{i}</span>
+        </div>
       );
     }
     return slots;
   };
 
-  const descriptionData = {
-    heading: "Dynamic Array Resizing",
-    subheading:
-      "Visualize how dynamic arrays automatically resize when capacity is exceeded",
-    summary:
-      "This animation demonstrates the crucial process of dynamic array resizing. When you try to insert an element into a full array, it creates a new array with double the capacity, copies all existing elements, then adds the new element. This ensures O(1) amortized time complexity for insertions.",
-    lang: "javascript",
-    code: `// Dynamic Array Resize Algorithm
-if (size >= capacity) {
-  // 1. Create new array with double capacity
-  newCapacity = capacity * 2;
-  newArray = new Array(newCapacity);
-
-  // 2. Copy all existing elements
-  for (let i = 0; i < size; i++) {
-    newArray[i] = oldArray[i];
-  }
-
-  // 3. Replace old array
-  array = newArray;
-  capacity = newCapacity;
-}
-
-// 4. Insert new element
-array[size] = newElement;
-size++;`,
-  };
-
   return (
     <>
-      <SEO data={seoData} />
-
-      <div className="min-h-screen max-w-7xl mx-auto w-full flex flex-col items-center justify-start gap-20 py-20 md:py-32 px-0 af-bg">
-        <Header />
-
-        <div className="af-surface rounded-lg p-4 md:p-8 border border-neutral-800 w-full">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl md:text-4xl font-bold text-white mb-2 tracking-wide">
-              Dynamic Array Resizing
-            </h1>
-            <p className="text-neutral-300 text-lg">
-              Size: {array.length} / Capacity: {capacity} | Load Factor:{" "}
-              {((array.length / capacity) * 100).toFixed(0)}%
-            </p>
-            {message && (
-              <p className="text-lime-400 text-sm mt-2 font-medium">
-                {message}
+      <SEO data={{ title: "Dynamic Array Resizing" }} />
+      <AlgoPageLayout
+        title="Dynamic Array Resizing"
+        category="Array & LinkedList"
+        categoryHref="/array-linkedlist"
+        timeComplexity="O(n)"
+        spaceComplexity="O(1)"
+      >
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-5">
+          <div className="space-y-4">
+            {/* Custom input */}
+            <div
+              className="rounded-xl border p-4"
+              style={{ background: BG, borderColor: BORDER }}
+            >
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                Insert Element
               </p>
-            )}
-          </div>
-
-          <div className="flex flex-wrap justify-center items-center gap-4 mb-8">
-            <div className="flex items-center gap-2">
-              <Plus className="w-4 h-4 text-white" />
-              <input
-                type="number"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                placeholder="Insert value"
-                disabled={isAnimating}
-                className="af-surface2 text-white px-3 py-2 rounded-md w-32 border border-neutral-600 focus:border-lime-400 focus:outline-none"
-              />
-            </div>
-
-            <SpeedControl
-              animationSpeed={animationSpeed}
-              setAnimationSpeed={setAnimationSpeed}
-              isAnimating={isAnimating}
-            />
-
-            <button
-              onClick={startAnimation}
-              disabled={isAnimating || !inputValue}
-              className="bg-gradient-to-r from-cyan-500 to-blue-500 text-black px-6 py-2 rounded-md font-semibold hover:from-lime-400 hover:to-green-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg flex items-center gap-2"
-            >
-              <Play className="w-4 h-4" />
-              {isAnimating ? "Inserting..." : "Insert"}
-            </button>
-
-            <button
-              onClick={reset}
-              disabled={isAnimating}
-              className="af-surface2 text-white px-6 py-2 rounded-md font-semibold hover:bg-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg flex items-center gap-2 border border-neutral-600"
-            >
-              <RotateCcw className="w-4 h-4" />
-              Reset
-            </button>
-          </div>
-
-          {/* Step Navigation Controls */}
-          {showStepControls && animationSteps.length > 0 && (
-            <div className="flex justify-center items-center gap-4 mb-8">
-              <button
-                onClick={() => navigateStep(-1)}
-                disabled={currentStep === 0}
-                className="bg-gradient-to-r from-lime-600 to-green-600 text-white px-4 py-2 rounded-md font-semibold hover:from-lime-500 hover:to-green-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2 shadow-lg"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                Back
-              </button>
-
-              <div className="af-surface2 px-4 py-2 rounded-md border border-neutral-600">
-                <span className="text-white font-semibold">
-                  Step {currentStep} / {animationSteps.length}
+              <div className="flex flex-wrap gap-3 items-end">
+                <div className="w-40">
+                  <label className="text-xs text-slate-500 mb-1 block">
+                    Value to insert
+                  </label>
+                  <input
+                    type="number"
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    placeholder="e.g. 7"
+                    disabled={playing}
+                    className="w-full px-3 py-2 rounded-lg text-sm text-white outline-none transition-colors"
+                    style={{
+                      background: "oklch(0.17 0.03 240)",
+                      border: `1px solid ${BORDER}`,
+                    }}
+                    onFocus={(e) => (e.target.style.borderColor = CYAN)}
+                    onBlur={(e) => (e.target.style.borderColor = BORDER)}
+                  />
+                </div>
+                <button
+                  onClick={handleInsert}
+                  disabled={playing || !inputValue}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-40"
+                  style={{ background: CYAN, color: "oklch(0.1 0.02 240)" }}
+                >
+                  Insert
+                </button>
+              </div>
+              <div className="mt-2 flex gap-3 text-xs text-slate-500">
+                <span>
+                  Size: {displayArray.length} / Capacity: {displayCapacity}
+                </span>
+                <span>
+                  Load Factor: {((displayArray.length / displayCapacity) * 100).toFixed(0)}%
                 </span>
               </div>
-
-              <button
-                onClick={() => navigateStep(1)}
-                disabled={currentStep >= animationSteps.length}
-                className="bg-gradient-to-r from-lime-600 to-green-600 text-white px-4 py-2 rounded-md font-semibold hover:from-lime-500 hover:to-green-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2 shadow-lg"
-              >
-                Next
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-
-          {/* Array Visualization */}
-          <div className="space-y-8">
-            {/* Current Array */}
-            <div className="bg-black p-6 rounded-lg">
-              <h3 className="text-white text-lg font-semibold mb-4 text-center">
-                {showNewArray ? "Current Array (Old)" : "Current Array"}
-              </h3>
-              <div className="flex justify-center items-center gap-2 flex-wrap min-h-[100px]">
-                {renderArraySlots(array, capacity)}
-              </div>
             </div>
 
-            {/* New Array (shown during resizing) */}
-            {showNewArray && (
-              <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-lime-500/20 to-green-500/20 rounded-lg animate-pulse"></div>
-                <div className="bg-black p-6 rounded-lg border-2 border-lime-400 relative">
-                  <h3 className="text-lime-400 text-lg font-semibold mb-4 text-center">
-                    New Array (Double Capacity)
+            {/* Visualization */}
+            <div
+              className="rounded-xl border p-5"
+              style={{ background: BG, borderColor: BORDER }}
+            >
+              <div className="space-y-6">
+                {/* Current Array */}
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-300 mb-3 text-center">
+                    {displayShowNewArray ? "Current Array (Old)" : "Current Array"}
                   </h3>
-                  <div className="flex justify-center items-center gap-2 flex-wrap min-h-[100px]">
-                    {renderArraySlots(newArray, newCapacity, true)}
+                  <div className="flex flex-wrap gap-2 justify-center min-h-[70px]">
+                    {renderArraySlots(displayArray, displayCapacity, false)}
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
 
-          {/* Progress Bar */}
-          {totalSteps > 0 && (
-            <div className="w-full af-surface2 rounded-full h-2 mb-4 mt-8">
-              <div
-                className="bg-gradient-to-r from-cyan-400 to-blue-400 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${(currentStep / totalSteps) * 100}%` }}
+                {/* New Array (shown during resizing) */}
+                {displayShowNewArray && (
+                  <div>
+                    <div
+                      className="rounded-lg border p-4"
+                      style={{
+                        background: "oklch(0.75 0.18 195 / 0.04)",
+                        borderColor: "oklch(0.55 0.12 195 / 0.3)",
+                      }}
+                    >
+                      <h3
+                        className="text-sm font-semibold mb-3 text-center"
+                        style={{ color: CYAN }}
+                      >
+                        New Array (Double Capacity: {displayNewCapacity})
+                      </h3>
+                      <div className="flex flex-wrap gap-2 justify-center min-h-[70px]">
+                        {renderArraySlots(displayNewArray, displayNewCapacity, true)}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Controls */}
+            <div
+              className="rounded-xl border p-4 flex flex-wrap gap-3"
+              style={{ background: BG, borderColor: BORDER }}
+            >
+              <button
+                onClick={togglePlay}
+                disabled={!inputValue && !started}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm disabled:opacity-40"
+                style={{ background: CYAN, color: "oklch(0.1 0.02 240)" }}
+              >
+                {playing ? (
+                  <Pause className="w-4 h-4" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}{" "}
+                {!started ? "Start" : playing ? "Pause" : "Resume"}
+              </button>
+              <button
+                onClick={reset}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold border text-slate-300"
+                style={{ borderColor: BORDER }}
+              >
+                <RotateCcw className="w-4 h-4" /> Reset
+              </button>
+              <SpeedControl
+                animationSpeed={speed}
+                setAnimationSpeed={setSpeed}
+                isAnimating={playing}
               />
             </div>
-          )}
 
-          <div className="text-center text-neutral-300 text-sm mt-6">
-            <p>
-              Amortized Time Complexity: O(1) | Worst Case: O(n) when resizing
-            </p>
-            <p className="mt-1 opacity-70">
-              Doubling strategy ensures each element is copied at most log(n)
-              times
-            </p>
+            <ExplanationPanel
+              steps={steps.map((s) => s.explanation)}
+              currentStep={stepIdx}
+              totalSteps={steps.length}
+            />
+          </div>
+
+          <div className="h-[500px] xl:h-auto xl:min-h-[600px]">
+            <CodePanel codes={CODES} highlightLine={cur?.line ?? null} />
           </div>
         </div>
-
-        <Description dataObj={descriptionData} />
-      </div>
+      </AlgoPageLayout>
     </>
   );
 }

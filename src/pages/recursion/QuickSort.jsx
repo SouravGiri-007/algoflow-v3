@@ -1,513 +1,469 @@
-import { useState, useEffect, useCallback } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { AlgoFlowHeader as Header } from "../../components/Header/Header";
+import { useState, useRef, useCallback } from "react";
+import { Play, Pause, RotateCcw, Shuffle } from "lucide-react";
+import AlgoPageLayout from "../../components/AlgoPageLayout";
+import CodePanel from "../../components/utils/CodePanel";
+import ExplanationPanel from "../../components/utils/ExplanationPanel";
 import SpeedControl from "../../components/utils/SpeedControl";
+import SEO from "../../components/SEO";
 
-function QuickSort() {
-  const [array, setArray] = useState([64, 34, 25, 12, 22, 11, 90]);
-  const [originalArray, setOriginalArray] = useState([
-    64, 34, 25, 12, 22, 11, 90,
-  ]);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [animationSpeed, setAnimationSpeed] = useState(800);
-  const [currentStep, setCurrentStep] = useState(0);
-  const [totalSteps, setTotalSteps] = useState(0);
-  const [pivotIndex, setPivotIndex] = useState(-1);
-  const [leftPointer, setLeftPointer] = useState(-1);
-  const [rightPointer, setRightPointer] = useState(-1);
-  const [sortedIndices, setSortedIndices] = useState(new Set());
-  const [activeRange, setActiveRange] = useState({ start: -1, end: -1 });
-  const [comparisons, setComparisons] = useState(0);
-  const [swaps, setSwaps] = useState(0);
-  const [partitionSteps, setPartitionSteps] = useState([]);
-  const [currentPartitionStep, setCurrentPartitionStep] = useState("");
+const CYAN = "oklch(0.75 0.18 195)";
+const BG = "oklch(0.13 0.025 240)";
+const BORDER = "oklch(0.22 0.04 240)";
 
-  // arrays for testing
-  const presetArrays = {
-    "Random Small": [64, 34, 25, 12, 22, 11, 90],
-    "Reverse Sorted": [90, 80, 70, 60, 50, 40, 30, 20, 10],
-    "Already Sorted": [10, 20, 30, 40, 50, 60, 70, 80, 90],
-    Duplicates: [5, 2, 8, 2, 9, 1, 5, 4],
-    "Single Element": [42],
-    "Two Elements": [5, 2],
-    "Many Duplicates": [3, 7, 3, 1, 7, 3, 9, 1],
-    "Large Random": [43, 12, 87, 23, 91, 45, 67, 34, 78, 56, 89, 21, 1, 7, 79],
-  };
+const CODES = {
+  pseudo: `QUICK-SORT(arr, low, high):
+  if low < high:
+    pi = PARTITION(arr, low, high)
+    QUICK-SORT(arr, low, pi - 1)
+    QUICK-SORT(arr, pi + 1, high)
 
-  // initializing sorting state
-  const initializeSorting = useCallback(() => {
-    setPivotIndex(-1);
-    setLeftPointer(-1);
-    setRightPointer(-1);
-    setSortedIndices(new Set());
-    setActiveRange({ start: -1, end: -1 });
-    setCurrentStep(0);
-    setTotalSteps(0);
-    setComparisons(0);
-    setSwaps(0);
-    setPartitionSteps([]);
-    setCurrentPartitionStep("");
-    setArray([...originalArray]);
-  }, [originalArray]);
+PARTITION(arr, low, high):
+  pivot = arr[high]
+  i = low - 1
+  for j from low to high - 1:
+    if arr[j] < pivot:
+      i = i + 1
+      swap arr[i] and arr[j]
+  swap arr[i+1] and arr[high]
+  return i + 1`,
+  python: `def quick_sort(arr, low, high):
+    if low < high:
+        pi = partition(arr, low, high)
+        quick_sort(arr, low, pi - 1)
+        quick_sort(arr, pi + 1, high)
 
-  useEffect(() => {
-    initializeSorting();
-  }, [originalArray, initializeSorting]);
+def partition(arr, low, high):
+    pivot = arr[high]
+    i = low - 1
+    for j in range(low, high):
+        if arr[j] < pivot:
+            i += 1
+            arr[i], arr[j] = arr[j], arr[i]
+    arr[i + 1], arr[high] = arr[high], arr[i + 1]
+    return i + 1`,
+  javascript: `function quickSort(arr, low, high) {
+  if (low < high) {
+    const pi = partition(arr, low, high);
+    quickSort(arr, low, pi - 1);
+    quickSort(arr, pi + 1, high);
+  }
+}
 
-  // random array generation
-  const generateRandomArray = (size = 8) => {
-    const newArray = Array.from(
-      { length: size },
-      () => Math.floor(Math.random() * 100) + 1,
-    );
-    setOriginalArray(newArray);
-  };
+function partition(arr, low, high) {
+  const pivot = arr[high];
+  let i = low - 1;
+  for (let j = low; j < high; j++) {
+    if (arr[j] < pivot) {
+      i++;
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+  }
+  [arr[i + 1], arr[high]] = [arr[high], arr[i + 1]];
+  return i + 1;
+}`,
+  cpp: `void quickSort(int arr[], int low, int high) {
+  if (low < high) {
+    int pi = partition(arr, low, high);
+    quickSort(arr, low, pi - 1);
+    quickSort(arr, pi + 1, high);
+  }
+}
 
-  // handling preset array selection
-  const handlePresetChange = (preset) => {
-    setOriginalArray([...presetArrays[preset]]);
-  };
+int partition(int arr[], int low, int high) {
+  int pivot = arr[high];
+  int i = low - 1;
+  for (int j = low; j < high; j++) {
+    if (arr[j] < pivot) {
+      i++;
+      swap(arr[i], arr[j]);
+    }
+  }
+  swap(arr[i + 1], arr[high]);
+  return i + 1;
+}`,
+};
 
-  // QuickSort implementation with animation steps
-  const quickSortWithSteps = useCallback(async (arr, low, high, steps = []) => {
-    if (low < high) {
-      // add partition step
-      steps.push({
-        type: "partition_start",
-        array: [...arr],
-        low,
-        high,
-        pivot: high, // using last element as pivot
-        message: `Partitioning range [${low}, ${high}] with pivot ${arr[high]}`,
-      });
+function buildSteps(input) {
+  const arr = [...input];
+  const n = arr.length;
+  const steps = [];
+  const sorted = [];
 
-      const pi = await partitionWithSteps(arr, low, high, steps);
+  steps.push({
+    arr: [...arr],
+    comparing: [],
+    swapping: [],
+    sorted: [...sorted],
+    pivot: [],
+    line: 1,
+    explanation: `Starting QuickSort on ${n} elements. We pick a pivot and partition elements around it.`,
+  });
 
-      steps.push({
-        type: "partition_complete",
-        array: [...arr],
-        pivotIndex: pi,
-        message: `Pivot ${arr[pi]} is now in correct position at index ${pi}`,
-      });
-
-      // recursively sort left and right subarrays
-      await quickSortWithSteps(arr, low, pi - 1, steps);
-      await quickSortWithSteps(arr, pi + 1, high, steps);
+  function qsort(a, low, high) {
+    if (low >= high) {
+      if (low === high && !sorted.includes(low)) {
+        sorted.push(low);
+      }
+      return;
     }
 
-    return steps;
-  }, []);
-
-  const partitionWithSteps = async (arr, low, high, steps) => {
-    const pivot = arr[high];
-    let i = low - 1;
-
+    // Partition start
+    const pivotVal = a[high];
     steps.push({
-      type: "partition_init",
-      array: [...arr],
-      pivot: high,
-      leftPointer: i,
-      rightPointer: low,
-      low,
-      high,
-      message: `Starting partition with pivot ${pivot} at index ${high}`,
+      arr: [...a],
+      comparing: [],
+      swapping: [],
+      sorted: [...sorted],
+      pivot: [high],
+      line: 8,
+      explanation: `Partitioning range [${low}..${high}] with pivot ${pivotVal} at index ${high}.`,
     });
 
+    let i = low - 1;
     for (let j = low; j < high; j++) {
+      // Compare step
       steps.push({
-        type: "compare",
-        array: [...arr],
-        pivot: high,
-        leftPointer: i,
-        rightPointer: j,
-        low,
-        high,
+        arr: [...a],
         comparing: [j, high],
-        message: `Comparing ${arr[j]} with pivot ${pivot}`,
+        swapping: [],
+        sorted: [...sorted],
+        pivot: [high],
+        line: 11,
+        explanation: `Comparing arr[${j}]=${a[j]} with pivot ${pivotVal}.`,
       });
 
-      if (arr[j] < pivot) {
+      if (a[j] < pivotVal) {
         i++;
         if (i !== j) {
-          // swap elements
-          [arr[i], arr[j]] = [arr[j], arr[i]];
+          // Swap step
           steps.push({
-            type: "swap",
-            array: [...arr],
-            pivot: high,
-            leftPointer: i,
-            rightPointer: j,
-            low,
-            high,
-            swapped: [i, j],
-            message: `Swapped ${arr[j]} and ${arr[i]} (elements smaller than pivot go left)`,
+            arr: [...a],
+            comparing: [],
+            swapping: [i, j],
+            sorted: [...sorted],
+            pivot: [high],
+            line: 13,
+            explanation: `arr[${j}]=${a[j]} < pivot ${pivotVal}, swap arr[${i}]=${a[i]} and arr[${j}]=${a[j]}.`,
           });
+          [a[i], a[j]] = [a[j], a[i]];
         }
       }
     }
 
-    // place pivot in correct position
-    [arr[i + 1], arr[high]] = [arr[high], arr[i + 1]];
+    // Pivot placement
+    const pi = i + 1;
+    if (pi !== high) {
+      steps.push({
+        arr: [...a],
+        comparing: [],
+        swapping: [pi, high],
+        sorted: [...sorted],
+        pivot: [high],
+        line: 14,
+        explanation: `Placing pivot ${pivotVal} at its correct position index ${pi}.`,
+      });
+      [a[pi], a[high]] = [a[high], a[pi]];
+    }
+
+    sorted.push(pi);
     steps.push({
-      type: "pivot_placement",
-      array: [...arr],
-      pivotIndex: i + 1,
-      low,
-      high,
-      swapped: [i + 1, high],
-      message: `Placed pivot ${pivot} in its correct position at index ${i + 1}`,
+      arr: [...a],
+      comparing: [],
+      swapping: [],
+      sorted: [...sorted],
+      pivot: [],
+      line: 15,
+      explanation: `Pivot ${a[pi]} is now in its final sorted position at index ${pi}.`,
     });
 
-    return i + 1;
+    // Recurse left
+    qsort(a, low, pi - 1);
+    // Recurse right
+    qsort(a, pi + 1, high);
+  }
+
+  qsort(arr, 0, n - 1);
+
+  // Mark all as sorted
+  const allSorted = Array.from({ length: n }, (_, i) => i);
+  steps.push({
+    arr: [...arr],
+    comparing: [],
+    swapping: [],
+    sorted: allSorted,
+    pivot: [],
+    line: 4,
+    explanation: `✅ QuickSort complete! Array is fully sorted.`,
+  });
+
+  return steps;
+}
+
+function randomArr(n = 14) {
+  return Array.from({ length: n }, () => Math.floor(Math.random() * 85) + 10);
+}
+
+export default function QuickSort() {
+  const [arr, setArr] = useState(() => randomArr());
+  const [customInput, setCustomInput] = useState("");
+  const [steps, setSteps] = useState([]);
+  const [stepIdx, setStepIdx] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(500);
+  const [started, setStarted] = useState(false);
+  const timer = useRef(null);
+  const cur = steps[stepIdx] || null;
+  const display = cur ? cur.arr : arr;
+  const maxVal = Math.max(...display, 1);
+
+  const reset = useCallback(() => {
+    clearInterval(timer.current);
+    setPlaying(false);
+    setStepIdx(0);
+    setStarted(false);
+    setSteps([]);
+  }, []);
+
+  const shuffle = () => {
+    reset();
+    setArr(randomArr());
+    setCustomInput("");
   };
 
-  const animateStep = async (step) => {
-    setArray([...step.array]);
-    setCurrentPartitionStep(step.message || "");
+  const applyCustom = () => {
+    reset();
+    const p = customInput
+      .split(",")
+      .map((s) => parseInt(s.trim()))
+      .filter((n) => !isNaN(n));
+    if (p.length >= 2) setArr(p.slice(0, 18));
+  };
 
-    switch (step.type) {
-      case "partition_start":
-        setActiveRange({ start: step.low, end: step.high });
-        setPivotIndex(step.pivot);
-        setLeftPointer(-1);
-        setRightPointer(-1);
-        break;
+  const run = (s) => {
+    setSteps(s);
+    setStepIdx(0);
+    setStarted(true);
+    setPlaying(true);
+    let idx = 0;
+    clearInterval(timer.current);
+    timer.current = setInterval(() => {
+      idx++;
+      if (idx >= s.length) {
+        clearInterval(timer.current);
+        setPlaying(false);
+        setStepIdx(s.length - 1);
+        return;
+      }
+      setStepIdx(idx);
+    }, speed);
+  };
 
-      case "partition_init":
-        setActiveRange({ start: step.low, end: step.high });
-        setPivotIndex(step.pivot);
-        setLeftPointer(step.leftPointer);
-        setRightPointer(step.rightPointer);
-        break;
-
-      case "compare":
-        setPivotIndex(step.pivot);
-        setLeftPointer(step.leftPointer);
-        setRightPointer(step.rightPointer);
-        setComparisons((prev) => prev + 1);
-        break;
-
-      case "swap":
-        setPivotIndex(step.pivot);
-        setLeftPointer(step.leftPointer);
-        setRightPointer(step.rightPointer);
-        setSwaps((prev) => prev + 1);
-        break;
-
-      case "pivot_placement":
-        setPivotIndex(step.pivotIndex);
-        setSortedIndices((prev) => new Set([...prev, step.pivotIndex]));
-        setSwaps((prev) => prev + 1);
-        break;
-
-      case "partition_complete":
-        setPivotIndex(-1);
-        setLeftPointer(-1);
-        setRightPointer(-1);
-        setActiveRange({ start: -1, end: -1 });
-        break;
+  const togglePlay = () => {
+    if (!started) {
+      run(buildSteps(arr));
+      return;
     }
-
-    setCurrentStep((prev) => prev + 1);
-
-    return new Promise((resolve) => {
-      setTimeout(resolve, animationSpeed);
-    });
-  };
-
-  const startSorting = async () => {
-    if (isAnimating) return;
-
-    setIsAnimating(true);
-    initializeSorting();
-
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    const arrayToSort = [...originalArray];
-    const steps = await quickSortWithSteps(
-      arrayToSort,
-      0,
-      arrayToSort.length - 1,
-    );
-
-    setTotalSteps(steps.length);
-
-    for (const step of steps) {
-      await animateStep(step);
+    if (playing) {
+      clearInterval(timer.current);
+      setPlaying(false);
+    } else {
+      setPlaying(true);
+      let idx = stepIdx;
+      timer.current = setInterval(() => {
+        idx++;
+        if (idx >= steps.length) {
+          clearInterval(timer.current);
+          setPlaying(false);
+          setStepIdx(steps.length - 1);
+          return;
+        }
+        setStepIdx(idx);
+      }, speed);
     }
-
-    // mark all elements as sorted
-    setSortedIndices(
-      new Set(Array.from({ length: originalArray.length }, (_, i) => i)),
-    );
-    setCurrentPartitionStep("Sorting complete!");
-    setIsAnimating(false);
   };
 
-  const reset = () => {
-    setIsAnimating(false);
-    initializeSorting();
-  };
-
-  const getElementColor = (index) => {
-    if (sortedIndices.has(index)) return "rgb(34, 197, 94)"; // green-500 (sorted)
-    if (index === pivotIndex) return "rgb(147, 51, 234)"; // purple-600 (pivot)
-    if (index === leftPointer && index === rightPointer)
-      return "rgb(249, 115, 22)"; // orange-500 (both pointers)
-    if (index === leftPointer) return "rgb(59, 130, 246)"; // blue-500 (left pointer)
-    if (index === rightPointer) return "rgb(239, 68, 68)"; // red-500 (right pointer)
-    if (
-      activeRange.start !== -1 &&
-      index >= activeRange.start &&
-      index <= activeRange.end
-    )
-      return "rgb(115, 115, 115)"; // neutral-500 (active range)
-    return "rgb(64, 64, 64)"; // neutral-700 (default)
-  };
-
-  const getElementBorder = (index) => {
-    if (index === pivotIndex) return "3px solid rgb(147, 51, 234)"; // purple
-    if (index === leftPointer && index === rightPointer)
-      return "3px solid rgb(249, 115, 22)"; // orange
-    if (index === leftPointer) return "3px solid rgb(59, 130, 246)"; // blue
-    if (index === rightPointer) return "3px solid rgb(239, 68, 68)"; // red
-    return "1px solid rgb(115, 115, 115)"; // neutral-500
-  };
-
-  const getBarHeight = (value) => {
-    const maxValue = Math.max(...originalArray);
-    return Math.max((value / maxValue) * 200, 20); // min height -> 20px
+  const getBar = (i) => {
+    if (!cur)
+      return { bg: "oklch(0.75 0.18 195 / 0.4)", border: CYAN };
+    if (cur.sorted && cur.sorted.includes(i))
+      return {
+        bg: "oklch(0.18 0.12 145 / 0.4)",
+        border: "oklch(0.55 0.18 145)",
+      };
+    if (cur.pivot && cur.pivot.includes(i))
+      return {
+        bg: "oklch(0.22 0.12 300 / 0.5)",
+        border: "oklch(0.65 0.18 300)",
+      };
+    if (cur.swapping && cur.swapping.includes(i))
+      return {
+        bg: "oklch(0.22 0.12 30 / 0.5)",
+        border: "oklch(0.65 0.18 30)",
+      };
+    if (cur.comparing && cur.comparing.includes(i))
+      return {
+        bg: "oklch(0.22 0.12 60 / 0.5)",
+        border: "oklch(0.65 0.18 60)",
+      };
+    return {
+      bg: "oklch(0.75 0.18 195 / 0.2)",
+      border: "oklch(0.75 0.18 195 / 0.4)",
+    };
   };
 
   return (
-    <div className="min-h-screen max-w-7xl mx-auto w-full flex flex-col items-center justify-start gap-20 py-32 px-4 af-bg">
-      <Header />
-
-      {/* Animation */}
-      <div className="af-surface rounded-lg p-8 border border-neutral-800 flex-1 w-full">
-        {/* Heading */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2 tracking-wide">
-            QuickSort Algorithm
-          </h1>
-          <p className="text-neutral-300 text-lg">
-            Step: {currentStep} / {totalSteps} | Comparisons: {comparisons} |
-            Swaps: {swaps}
-          </p>
-          {currentPartitionStep && (
-            <p className="text-yellow-400 text-md font-medium mt-2">
-              {currentPartitionStep}
-            </p>
-          )}
-        </div>
-
-        {/* Controls */}
-        <div className="flex flex-wrap justify-center items-center gap-4 mb-8">
-          <div className="flex items-center gap-2">
-            <label className="text-white font-medium">Preset:</label>
-            <select
-              onChange={(e) =>
-                e.target.value && handlePresetChange(e.target.value)
-              }
-              disabled={isAnimating}
-              className="af-surface text-white px-3 py-1 rounded-lg border border-neutral-600 focus:border-white focus:outline-none"
+    <>
+      <SEO data={{ title: "QuickSort" }} />
+      <AlgoPageLayout
+        title="QuickSort"
+        category="Recursion"
+        categoryHref="/recursion"
+        timeComplexity="O(n log n)"
+        spaceComplexity="O(log n)"
+      >
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-5">
+          <div className="space-y-4">
+            {/* Custom input */}
+            <div
+              className="rounded-xl border p-4"
+              style={{ background: BG, borderColor: BORDER }}
             >
-              <option value="">Select preset...</option>
-              {Object.keys(presetArrays).map((preset) => (
-                <option key={preset} value={preset}>
-                  {preset}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <button
-            onClick={() => generateRandomArray(8)}
-            disabled={isAnimating}
-            className="af-surface2 text-white px-4 py-2 rounded-lg font-medium hover:bg-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-          >
-            Random Array
-          </button>
-
-          <SpeedControl
-            animationSpeed={animationSpeed}
-            setAnimationSpeed={setAnimationSpeed}
-            isAnimating={isAnimating}
-          />
-
-          <button
-            onClick={startSorting}
-            disabled={isAnimating}
-            className="bg-white text-black px-6 py-2 rounded-lg font-semibold hover:bg-neutral-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg"
-          >
-            {isAnimating ? "Sorting..." : "Start"}
-          </button>
-
-          <button
-            onClick={reset}
-            disabled={isAnimating}
-            className="af-surface2 text-white px-6 py-2 rounded-lg font-semibold hover:bg-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg"
-          >
-            Reset
-          </button>
-        </div>
-
-        {/* Array Visualization / Game Board */}
-        <div className="bg-black p-10 rounded-lg mb-8">
-          {/* Bar Chart View */}
-          <div
-            className="flex justify-center items-end gap-2 mb-8"
-            style={{ height: "250px" }}
-          >
-            {array.map((value, index) => (
-              <div key={index} className="flex flex-col items-center">
-                <div className="text-white text-xs mb-1">{index}</div>
-                <div
-                  className="flex items-end justify-center text-white font-bold text-sm transition-all duration-300 rounded-t-lg"
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                Custom Input
+              </p>
+              <div className="flex gap-3 flex-wrap">
+                <input
+                  value={customInput}
+                  onChange={(e) => setCustomInput(e.target.value)}
+                  placeholder="e.g. 64, 34, 25, 12, 22"
+                  className="flex-1 px-3 py-2 rounded-lg text-sm text-white outline-none"
                   style={{
-                    width: "40px",
-                    height: `${getBarHeight(value)}px`,
-                    backgroundColor: getElementColor(index),
-                    border: getElementBorder(index),
-                    transform:
-                      index === leftPointer ||
-                      index === rightPointer ||
-                      index === pivotIndex
-                        ? "scale(1.05)"
-                        : "scale(1)",
+                    background: "oklch(0.17 0.03 240)",
+                    border: `1px solid ${BORDER}`,
                   }}
+                  onFocus={(e) => (e.target.style.borderColor = CYAN)}
+                  onBlur={(e) => (e.target.style.borderColor = BORDER)}
+                />
+                <button
+                  onClick={applyCustom}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold"
+                  style={{ background: CYAN, color: "oklch(0.1 0.02 240)" }}
                 >
-                  <span className="mb-1">{value}</span>
-                </div>
+                  Apply
+                </button>
+                <button
+                  onClick={shuffle}
+                  className="px-3 py-2 rounded-lg border text-slate-400"
+                  style={{ borderColor: BORDER }}
+                >
+                  <Shuffle className="w-4 h-4" />
+                </button>
               </div>
-            ))}
-          </div>
+            </div>
 
-          {/* Array Elements View */}
-          <div className="flex justify-center items-center gap-2 flex-wrap">
-            {array.map((value, index) => (
-              <div
-                key={index}
-                className="flex flex-col items-center transition-all duration-300"
-                style={{
-                  transform:
-                    index === leftPointer ||
-                    index === rightPointer ||
-                    index === pivotIndex
-                      ? "scale(1.1)"
-                      : "scale(1)",
-                }}
+            {/* Bar chart visualization */}
+            <div
+              className="rounded-xl border p-5"
+              style={{ background: BG, borderColor: BORDER }}
+            >
+              <div className="flex gap-4 text-xs text-slate-500 mb-4">
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className="w-2.5 h-2.5 rounded-sm"
+                    style={{ background: "oklch(0.65 0.18 60)" }}
+                  />
+                  Comparing
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className="w-2.5 h-2.5 rounded-sm"
+                    style={{ background: "oklch(0.65 0.18 30)" }}
+                  />
+                  Swapping
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className="w-2.5 h-2.5 rounded-sm"
+                    style={{ background: "oklch(0.65 0.18 300)" }}
+                  />
+                  Pivot
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className="w-2.5 h-2.5 rounded-sm"
+                    style={{ background: "oklch(0.55 0.18 145)" }}
+                  />
+                  Sorted
+                </span>
+              </div>
+              <div className="flex items-end gap-1.5 h-48 justify-center">
+                {display.map((val, i) => {
+                  const s = getBar(i);
+                  const pct = (val / maxVal) * 100;
+                  return (
+                    <div
+                      key={i}
+                      className="flex flex-col items-center gap-1 flex-1 min-w-0"
+                    >
+                      <span className="text-[10px] text-slate-400">{val}</span>
+                      <div
+                        className="w-full rounded-t-sm border transition-all duration-200"
+                        style={{
+                          height: `${pct}%`,
+                          minHeight: 4,
+                          background: s.bg,
+                          borderColor: s.border,
+                        }}
+                      />
+                      <span className="text-[10px] text-slate-600">{i}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Controls */}
+            <div
+              className="rounded-xl border p-4 flex flex-wrap gap-3"
+              style={{ background: BG, borderColor: BORDER }}
+            >
+              <button
+                onClick={togglePlay}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm"
+                style={{ background: CYAN, color: "oklch(0.1 0.02 240)" }}
               >
-                <div className="text-white text-xs mb-1">{index}</div>
-                <div
-                  className="w-12 h-12 flex items-center justify-center rounded-lg text-white font-bold transition-all duration-300"
-                  style={{
-                    backgroundColor: getElementColor(index),
-                    border: getElementBorder(index),
-                  }}
-                >
-                  {value}
-                </div>
-              </div>
-            ))}
+                {playing ? (
+                  <Pause className="w-4 h-4" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
+                {!started ? "Start" : playing ? "Pause" : "Resume"}
+              </button>
+              <button
+                onClick={reset}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold border text-slate-300"
+                style={{ borderColor: BORDER }}
+              >
+                <RotateCcw className="w-4 h-4" />
+                Reset
+              </button>
+              <SpeedControl
+                animationSpeed={speed}
+                setAnimationSpeed={setSpeed}
+                isAnimating={playing}
+              />
+            </div>
+            <ExplanationPanel
+              steps={steps.map((s) => s.explanation)}
+              currentStep={stepIdx}
+              totalSteps={steps.length}
+            />
+          </div>
+          <div className="h-[500px] xl:h-auto xl:min-h-[600px]">
+            <CodePanel codes={CODES} highlightLine={cur?.line ?? null} />
           </div>
         </div>
-
-        {/* Progress Bar */}
-        <div className="w-full af-surface2 rounded-full h-2 mb-4">
-          <div
-            className="bg-gradient-to-r from-cyan-400 to-blue-500 h-2 rounded-full transition-all duration-300"
-            style={{
-              width:
-                totalSteps > 0 ? `${(currentStep / totalSteps) * 100}%` : "0%",
-            }}
-          />
-        </div>
-
-        {/* Legend */}
-        <div className="flex justify-center gap-4 text-sm text-neutral-300 mb-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded af-surface2"></div>
-            <span>Unsorted</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-neutral-500"></div>
-            <span>Active Range</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-purple-600 border-2 border-purple-600"></div>
-            <span>Pivot</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-blue-500 border-2 border-blue-500"></div>
-            <span>Left Pointer</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-red-500 border-2 border-red-500"></div>
-            <span>Right Pointer</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-cyan-400"></div>
-            <span>Sorted</span>
-          </div>
-        </div>
-
-        {/* Algorithm Explanation */}
-        <div className="text-center text-neutral-300 text-sm">
-          <p>
-            QuickSort: Divide-and-conquer algorithm that partitions around a
-            pivot
-          </p>
-          <p className="mt-1 opacity-70">
-            Average Time: O(n log n) | Worst Case: O(n²) | Space: O(log n)
-          </p>
-        </div>
-      </div>
-
-      {/* Description */}
-      <Card className="w-full af-surface text-white border-none shadow-none">
-        <CardHeader>
-          <CardTitle>QuickSort Algorithm</CardTitle>
-          <CardDescription className="text-neutral-400">
-            An efficient divide-and-conquer sorting algorithm
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-neutral-300 leading-relaxed mb-4">
-            QuickSort works by selecting a 'pivot' element and partitioning the
-            array so that elements smaller than the pivot come before it, and
-            elements greater come after it. This process is recursively applied
-            to the sub-arrays on either side of the pivot.
-          </p>
-          <p className="text-neutral-300 leading-relaxed mb-4">
-            The partitioning process uses two pointers: one moving from left to
-            right finding elements larger than the pivot, and the algorithm
-            swaps elements to maintain the partition invariant. Once
-            partitioned, the pivot is in its final sorted position.
-          </p>
-          <p className="text-neutral-300 leading-relaxed">
-            While QuickSort has O(n²) worst-case time complexity (when the pivot
-            is always the smallest or largest element), its average-case
-            performance of O(n log n) and good cache locality make it one of the
-            fastest sorting algorithms in practice.
-          </p>
-        </CardContent>
-        <CardFooter>
-          <p className="text-neutral-400 text-sm">
-            Developed by Tony Hoare in 1961, QuickSort is widely used in
-            practice due to its efficiency and in-place sorting capability.
-          </p>
-        </CardFooter>
-      </Card>
-    </div>
+      </AlgoPageLayout>
+    </>
   );
 }
-
-export default QuickSort;

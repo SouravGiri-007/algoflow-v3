@@ -1,31 +1,158 @@
-import React, { useState, useEffect } from "react";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Play,
-  RotateCcw,
-  Plus,
-  Minus,
-  Search,
-} from "lucide-react";
-import { AlgoFlowHeader as Header } from "../../components/Header/Header";
+import { useState, useRef, useCallback } from "react";
+import { Play, Pause, RotateCcw, Plus, Search } from "lucide-react";
+import AlgoPageLayout from "../../components/AlgoPageLayout";
+import CodePanel from "../../components/utils/CodePanel";
+import ExplanationPanel from "../../components/utils/ExplanationPanel";
 import SpeedControl from "../../components/utils/SpeedControl";
-import Description from "../../components/utils/Description";
 import SEO from "../../components/SEO";
+
+const CYAN = "oklch(0.75 0.18 195)";
+const BG = "oklch(0.13 0.025 240)";
+const BORDER = "oklch(0.22 0.04 240)";
+
+const CODES = {
+  pseudo: `RB-INSERT(root, key):
+  node ← new RBNode(key)   // RED
+  BST-INSERT(root, node)
+  FIX-INSERT(node)
+
+FIX-INSERT(node):
+  while node ≠ root AND node.parent.color = RED:
+    if node.parent is left child:
+      uncle ← node.parent.parent.right
+      if uncle.color = RED:        // Case 1
+        recolor(parent, uncle, grandparent)
+        node ← grandparent
+      else:                         // Case 2 & 3
+        if node is right child:     // Case 2
+          LEFT-ROTATE(parent)
+          node ← node.parent
+        node.parent.color ← BLACK  // Case 3
+        grandparent.color ← RED
+        RIGHT-ROTATE(grandparent)
+  root.color ← BLACK`,
+  python: `class RBNode:
+    def __init__(self, val):
+        self.val = val
+        self.color = 'RED'
+        self.left = self.right = self.parent = None
+
+def rb_insert(root, key):
+    node = RBNode(key)
+    root = bst_insert(root, node)
+    fix_insert(node)
+    return root
+
+def fix_insert(node):
+    while node != root and node.parent.color == 'RED':
+        if node.parent == node.parent.parent.left:
+            uncle = node.parent.parent.right
+            if uncle and uncle.color == 'RED':
+                node.parent.color = 'BLACK'
+                uncle.color = 'BLACK'
+                node.parent.parent.color = 'RED'
+                node = node.parent.parent
+            else:
+                if node == node.parent.right:
+                    node = node.parent
+                    left_rotate(node)
+                node.parent.color = 'BLACK'
+                node.parent.parent.color = 'RED'
+                right_rotate(node.parent.parent)
+    root.color = 'BLACK'`,
+  javascript: `class RBNode {
+  constructor(val) {
+    this.val = val;
+    this.color = 'RED';
+    this.left = this.right = this.parent = null;
+  }
+}
+function rbInsert(root, key) {
+  const node = new RBNode(key);
+  bstInsert(root, node);
+  fixInsert(node);
+}
+function fixInsert(node) {
+  while (node !== root && node.parent.color === 'RED') {
+    if (node.parent === node.parent.parent.left) {
+      const uncle = node.parent.parent.right;
+      if (uncle && uncle.color === 'RED') {
+        node.parent.color = 'BLACK';
+        uncle.color = 'BLACK';
+        node.parent.parent.color = 'RED';
+        node = node.parent.parent;
+      } else {
+        if (node === node.parent.right) {
+          node = node.parent;
+          leftRotate(node);
+        }
+        node.parent.color = 'BLACK';
+        node.parent.parent.color = 'RED';
+        rightRotate(node.parent.parent);
+      }
+    }
+  }
+  root.color = 'BLACK';
+}`,
+  cpp: `struct RBNode {
+  int val; Color color;
+  RBNode *left, *right, *parent;
+};
+void rbInsert(RBNode*& root, int key) {
+  RBNode* node = new RBNode{key, RED, nil, nil, nil};
+  bstInsert(root, node);
+  fixInsert(root, node);
+}
+void fixInsert(RBNode*& root, RBNode* node) {
+  while (node != root && node->parent->color == RED) {
+    if (node->parent == node->parent->parent->left) {
+      RBNode* uncle = node->parent->parent->right;
+      if (uncle->color == RED) {
+        node->parent->color = BLACK;
+        uncle->color = BLACK;
+        node->parent->parent->color = RED;
+        node = node->parent->parent;
+      } else {
+        if (node == node->parent->right) {
+          node = node->parent;
+          leftRotate(root, node);
+        }
+        node->parent->color = BLACK;
+        node->parent->parent->color = RED;
+        rightRotate(root, node->parent->parent);
+      }
+    }
+  }
+  root->color = BLACK;
+}`,
+};
 
 class RBNode {
   constructor(value) {
     this.value = value;
-    this.color = "RED"; // New nodes are always red
+    this.color = "RED";
     this.left = null;
     this.right = null;
     this.parent = null;
   }
 }
 
-class RedBlackTree {
+class RBTreeClass {
   constructor() {
     this.root = null;
+  }
+
+  serialize() {
+    const s = (node) => {
+      if (!node) return null;
+      return {
+        value: node.value,
+        color: node.color,
+        left: s(node.left),
+        right: s(node.right),
+      };
+    };
+    return s(this.root);
   }
 
   insert(value, steps = []) {
@@ -35,26 +162,26 @@ class RedBlackTree {
       newNode.color = "BLACK";
       this.root = newNode;
       steps.push({
-        type: "insert_root",
         tree: this.serialize(),
-        highlightNode: value,
-        message: `Inserted ${value} as root. Root must be black.`,
+        highlight: value,
+        specialNodes: {},
+        line: 1,
+        explanation: `Inserted ${value} as root. Root must be black.`,
       });
       return steps;
     }
 
-    // Regular BST insertion
     let current = this.root;
     let parent = null;
 
     while (current) {
       parent = current;
       steps.push({
-        type: "search",
         tree: this.serialize(),
-        highlightNode: current.value,
-        compareValue: value,
-        message: `Comparing ${value} with ${current.value}`,
+        highlight: current.value,
+        specialNodes: {},
+        line: 3,
+        explanation: `Comparing ${value} with ${current.value}.`,
       });
 
       if (value < current.value) {
@@ -63,10 +190,11 @@ class RedBlackTree {
         current = current.right;
       } else {
         steps.push({
-          type: "duplicate",
           tree: this.serialize(),
-          highlightNode: value,
-          message: `Value ${value} already exists. No insertion needed.`,
+          highlight: value,
+          specialNodes: {},
+          line: 3,
+          explanation: `Value ${value} already exists. No insertion needed.`,
         });
         return steps;
       }
@@ -80,10 +208,11 @@ class RedBlackTree {
     }
 
     steps.push({
-      type: "insert_node",
       tree: this.serialize(),
-      highlightNode: value,
-      message: `Inserted ${value} as red node. Checking RB properties...`,
+      highlight: value,
+      specialNodes: {},
+      line: 4,
+      explanation: `Inserted ${value} as red node. Checking RB properties...`,
     });
 
     this.fixInsert(newNode, steps);
@@ -96,15 +225,16 @@ class RedBlackTree {
         const uncle = node.parent.parent.right;
 
         if (uncle && uncle.color === "RED") {
-          // Case 1: Uncle is red
           steps.push({
-            type: "recolor",
             tree: this.serialize(),
-            highlightNode: node.value,
-            uncleNode: uncle.value,
-            parentNode: node.parent.value,
-            grandparentNode: node.parent.parent.value,
-            message: `Case 1: Uncle is red. Recoloring parent, uncle to black and grandparent to red.`,
+            highlight: node.value,
+            specialNodes: {
+              [node.parent.value]: "parent",
+              [uncle.value]: "uncle",
+              [node.parent.parent.value]: "grandparent",
+            },
+            line: 9,
+            explanation: `Case 1: Uncle ${uncle.value} is red. Recoloring parent, uncle to black and grandparent to red.`,
           });
 
           node.parent.color = "BLACK";
@@ -113,19 +243,20 @@ class RedBlackTree {
           node = node.parent.parent;
 
           steps.push({
-            type: "recolor_complete",
             tree: this.serialize(),
-            highlightNode: node.value,
-            message: `Recoloring complete. Moving up to check grandparent.`,
+            highlight: node.value,
+            specialNodes: {},
+            line: 9,
+            explanation: `Recoloring complete. Moving up to check grandparent.`,
           });
         } else {
-          // Case 2: Uncle is black
           if (node === node.parent.right) {
             steps.push({
-              type: "rotation_prep",
               tree: this.serialize(),
-              highlightNode: node.value,
-              message: `Case 2: Uncle is black, node is right child. Left rotation needed.`,
+              highlight: node.value,
+              specialNodes: { [node.parent.value]: "parent" },
+              line: 13,
+              explanation: `Case 2: Uncle is black, node is right child. Left rotation needed.`,
             });
 
             node = node.parent;
@@ -133,10 +264,14 @@ class RedBlackTree {
           }
 
           steps.push({
-            type: "rotation_prep2",
             tree: this.serialize(),
-            highlightNode: node.value,
-            message: `Case 3: Uncle is black, node is left child. Recolor and right rotation.`,
+            highlight: node.value,
+            specialNodes: {
+              [node.parent.value]: "parent",
+              [node.parent.parent.value]: "grandparent",
+            },
+            line: 17,
+            explanation: `Case 3: Uncle is black, node is left child. Recolor and right rotation.`,
           });
 
           node.parent.color = "BLACK";
@@ -148,13 +283,15 @@ class RedBlackTree {
 
         if (uncle && uncle.color === "RED") {
           steps.push({
-            type: "recolor",
             tree: this.serialize(),
-            highlightNode: node.value,
-            uncleNode: uncle.value,
-            parentNode: node.parent.value,
-            grandparentNode: node.parent.parent.value,
-            message: `Case 1: Uncle is red. Recoloring parent, uncle to black and grandparent to red.`,
+            highlight: node.value,
+            specialNodes: {
+              [node.parent.value]: "parent",
+              [uncle.value]: "uncle",
+              [node.parent.parent.value]: "grandparent",
+            },
+            line: 9,
+            explanation: `Case 1: Uncle ${uncle.value} is red. Recoloring parent, uncle to black and grandparent to red.`,
           });
 
           node.parent.color = "BLACK";
@@ -163,18 +300,20 @@ class RedBlackTree {
           node = node.parent.parent;
 
           steps.push({
-            type: "recolor_complete",
             tree: this.serialize(),
-            highlightNode: node.value,
-            message: `Recoloring complete. Moving up to check grandparent.`,
+            highlight: node.value,
+            specialNodes: {},
+            line: 9,
+            explanation: `Recoloring complete. Moving up to check grandparent.`,
           });
         } else {
           if (node === node.parent.left) {
             steps.push({
-              type: "rotation_prep",
               tree: this.serialize(),
-              highlightNode: node.value,
-              message: `Case 2: Uncle is black, node is left child. Right rotation needed.`,
+              highlight: node.value,
+              specialNodes: { [node.parent.value]: "parent" },
+              line: 13,
+              explanation: `Case 2: Uncle is black, node is left child. Right rotation needed.`,
             });
 
             node = node.parent;
@@ -182,10 +321,14 @@ class RedBlackTree {
           }
 
           steps.push({
-            type: "rotation_prep2",
             tree: this.serialize(),
-            highlightNode: node.value,
-            message: `Case 3: Uncle is black, node is right child. Recolor and left rotation.`,
+            highlight: node.value,
+            specialNodes: {
+              [node.parent.value]: "parent",
+              [node.parent.parent.value]: "grandparent",
+            },
+            line: 17,
+            explanation: `Case 3: Uncle is black, node is right child. Recolor and left rotation.`,
           });
 
           node.parent.color = "BLACK";
@@ -197,10 +340,11 @@ class RedBlackTree {
 
     this.root.color = "BLACK";
     steps.push({
-      type: "fix_complete",
       tree: this.serialize(),
-      highlightNode: this.root.value,
-      message: `Red-Black tree properties restored. Root is always black.`,
+      highlight: this.root?.value ?? null,
+      specialNodes: {},
+      line: 20,
+      explanation: `✅ Red-Black tree properties restored. Root is always black.`,
     });
   }
 
@@ -226,10 +370,11 @@ class RedBlackTree {
     node.parent = rightChild;
 
     steps.push({
-      type: "rotate_left",
       tree: this.serialize(),
-      rotatedNode: rightChild.value,
-      message: `Left rotation complete around node ${rightChild.value}.`,
+      highlight: rightChild.value,
+      specialNodes: { [rightChild.value]: "rotated" },
+      line: 14,
+      explanation: `Left rotation complete around node ${rightChild.value}.`,
     });
   }
 
@@ -255,51 +400,41 @@ class RedBlackTree {
     node.parent = leftChild;
 
     steps.push({
-      type: "rotate_right",
       tree: this.serialize(),
-      rotatedNode: leftChild.value,
-      message: `Right rotation complete around node ${leftChild.value}.`,
+      highlight: leftChild.value,
+      specialNodes: { [leftChild.value]: "rotated" },
+      line: 18,
+      explanation: `Right rotation complete around node ${leftChild.value}.`,
     });
-  }
-
-  serialize() {
-    const serializeNode = (node) => {
-      if (!node) return null;
-      return {
-        value: node.value,
-        color: node.color,
-        left: serializeNode(node.left),
-        right: serializeNode(node.right),
-      };
-    };
-    return serializeNode(this.root);
   }
 
   search(value, steps = []) {
     let current = this.root;
 
     steps.push({
-      type: "search_start",
       tree: this.serialize(),
-      searchValue: value,
-      message: `Searching for ${value} in Red-Black tree...`,
+      highlight: null,
+      specialNodes: {},
+      line: 3,
+      explanation: `Searching for ${value} in Red-Black tree...`,
     });
 
     while (current) {
       steps.push({
-        type: "search_compare",
         tree: this.serialize(),
-        highlightNode: current.value,
-        compareValue: value,
-        message: `Comparing ${value} with ${current.value}`,
+        highlight: current.value,
+        specialNodes: {},
+        line: 3,
+        explanation: `Comparing ${value} with ${current.value}.`,
       });
 
       if (value === current.value) {
         steps.push({
-          type: "search_found",
           tree: this.serialize(),
-          highlightNode: current.value,
-          message: `Found ${value}!`,
+          highlight: current.value,
+          specialNodes: {},
+          line: 3,
+          explanation: `✅ Found ${value}!`,
         });
         return steps;
       } else if (value < current.value) {
@@ -310,477 +445,429 @@ class RedBlackTree {
     }
 
     steps.push({
-      type: "search_not_found",
       tree: this.serialize(),
-      searchValue: value,
-      message: `${value} not found in the tree.`,
+      highlight: null,
+      specialNodes: {},
+      line: 3,
+      explanation: `❌ ${value} not found in the tree.`,
     });
 
     return steps;
   }
 }
 
-export default function RedBlackTreeAnimation() {
-  const [tree] = useState(new RedBlackTree());
-  const [treeData, setTreeData] = useState(null);
-  const [animationSpeed, setAnimationSpeed] = useState(800);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [currentStep, setCurrentStep] = useState(0);
-  const [totalSteps, setTotalSteps] = useState(0);
-  const [animationSteps, setAnimationSteps] = useState([]);
-  const [showStepControls, setShowStepControls] = useState(false);
-  const [operation, setOperation] = useState("insert");
-  const [inputValue, setInputValue] = useState("");
-  const [highlightNode, setHighlightNode] = useState(null);
-  const [message, setMessage] = useState("");
-  const [specialNodes, setSpecialNodes] = useState({});
-
-  const seoData = {
-    title: "Red-Black Tree Visualization - Algorithm Visualizer",
-    description:
-      "Interactive visualization of Red-Black Tree operations including insertion, search, and self-balancing rotations.",
-    canonical: "/trees/red-black-tree",
-    openGraph: {
-      title: "Red-Black Tree Algorithm Visualization",
-      description:
-        "Learn Red-Black Trees through interactive self-balancing animations",
-      url: "/trees/red-black-tree",
-      type: "website",
-    },
-    twitter: {
-      card: "summary",
-      title: "Red-Black Tree Visualization",
-      description: "Interactive Red-Black Tree data structure visualization",
-    },
-  };
-
-  const startAnimation = () => {
-    if (!inputValue) return;
-
-    const value = parseInt(inputValue);
-    let steps = [];
-
-    if (operation === "insert") {
-      steps = tree.insert(value);
-    } else if (operation === "search") {
-      steps = tree.search(value);
-    }
-
-    setAnimationSteps(steps);
-    setTotalSteps(steps.length);
-    setCurrentStep(0);
-    setIsAnimating(true);
-    setShowStepControls(false);
-
-    let stepIndex = 0;
-    const interval = setInterval(() => {
-      if (stepIndex < steps.length) {
-        const step = steps[stepIndex];
-
-        setTreeData(step.tree);
-        setHighlightNode(step.highlightNode || null);
-        setMessage(step.message);
-
-        // Set special nodes for different highlighting
-        const special = {};
-        if (step.uncleNode) special[step.uncleNode] = "uncle";
-        if (step.parentNode) special[step.parentNode] = "parent";
-        if (step.grandparentNode) special[step.grandparentNode] = "grandparent";
-        if (step.rotatedNode) special[step.rotatedNode] = "rotated";
-        setSpecialNodes(special);
-
-        setCurrentStep(stepIndex + 1);
-        stepIndex++;
-      } else {
-        clearInterval(interval);
-        setIsAnimating(false);
-        setHighlightNode(null);
-        setSpecialNodes({});
-        setShowStepControls(true);
-        setInputValue("");
-      }
-    }, animationSpeed);
-  };
-
-  const reset = () => {
-    // Create new tree
-    const newTree = new RedBlackTree();
-    setTreeData(null);
-    setHighlightNode(null);
-    setSpecialNodes({});
-    setMessage("Red-Black Tree initialized. Ready for operations.");
-    setCurrentStep(0);
-    setTotalSteps(0);
-    setShowStepControls(false);
-    setInputValue("");
-
-    // Clear the tree object
-    tree.root = null;
-  };
-
-  const navigateStep = (direction) => {
-    const newStep = currentStep + direction;
-    if (newStep >= 0 && newStep < animationSteps.length) {
-      setCurrentStep(newStep);
-      const step = animationSteps[newStep];
-
-      setTreeData(step.tree);
-      setHighlightNode(step.highlightNode || null);
-      setMessage(step.message);
-
-      const special = {};
-      if (step.uncleNode) special[step.uncleNode] = "uncle";
-      if (step.parentNode) special[step.parentNode] = "parent";
-      if (step.grandparentNode) special[step.grandparentNode] = "grandparent";
-      if (step.rotatedNode) special[step.rotatedNode] = "rotated";
-      setSpecialNodes(special);
-    }
-  };
-
-  const renderTree = (node, x = 400, y = 60, level = 0) => {
-    if (!node) return null;
-
-    const horizontalSpacing = Math.max(180 / (level + 1), 60);
-    const verticalSpacing = 80;
-
-    const leftX = x - horizontalSpacing;
-    const rightX = x + horizontalSpacing;
-    const childY = y + verticalSpacing;
-
-    const isHighlighted = highlightNode === node.value;
-    const specialType = specialNodes[node.value];
-
-    return (
-      <g key={`node-${node.value}-${x}-${y}`}>
-        {/* Edges */}
-        {node.left && (
-          <line
-            x1={x}
-            y1={y + 20}
-            x2={leftX}
-            y2={childY - 20}
-            stroke="#6b7280"
-            strokeWidth="2"
-          />
-        )}
-        {node.right && (
-          <line
-            x1={x}
-            y1={y + 20}
-            x2={rightX}
-            y2={childY - 20}
-            stroke="#6b7280"
-            strokeWidth="2"
-          />
-        )}
-
-        {/* Node */}
-        <circle
-          cx={x}
-          cy={y}
-          r="20"
-          fill={
-            isHighlighted
-              ? "#84cc16"
-              : specialType === "uncle"
-                ? "#f97316"
-                : specialType === "parent"
-                  ? "#3b82f6"
-                  : specialType === "grandparent"
-                    ? "#8b5cf6"
-                    : specialType === "rotated"
-                      ? "#06b6d4"
-                      : node.color === "RED"
-                        ? "#ef4444"
-                        : "#1f2937"
-          }
-          stroke={
-            isHighlighted
-              ? "#65a30d"
-              : node.color === "RED"
-                ? "#dc2626"
-                : "#374151"
-          }
-          strokeWidth="3"
-          className="transition-all duration-500"
-        />
-
-        <text
-          x={x}
-          y={y + 5}
-          textAnchor="middle"
-          className="text-white font-bold text-sm"
-          fill="white"
-        >
-          {node.value}
-        </text>
-
-        {/* Color indicator */}
-        <text
-          x={x}
-          y={y - 35}
-          textAnchor="middle"
-          className="text-xs font-semibold"
-          fill={node.color === "RED" ? "#ef4444" : "#1f2937"}
-        >
-          {node.color}
-        </text>
-
-        {/* Recursively render children */}
-        {node.left && renderTree(node.left, leftX, childY, level + 1)}
-        {node.right && renderTree(node.right, rightX, childY, level + 1)}
-      </g>
-    );
-  };
-
-  const descriptionData = {
-    heading: "Red-Black Tree",
-    subheading:
-      "Self-balancing binary search tree with guaranteed O(log n) operations",
-    summary:
-      "A Red-Black Tree is a self-balancing binary search tree where each node has a color (red or black). It maintains balance through five properties: (1) Every node is either red or black, (2) Root is black, (3) All leaves (NIL) are black, (4) Red nodes have black children, (5) All paths from root to leaves have the same number of black nodes.",
-    lang: "javascript",
-    code: `class RBNode {
-  constructor(value) {
-    this.value = value;
-    this.color = 'RED'; // New nodes start red
-    this.left = null;
-    this.right = null;
-    this.parent = null;
-  }
+// Layout tree for SVG rendering
+function layoutTree(node, x, y, spread, positions = {}) {
+  if (!node) return positions;
+  positions[node.value] = { x, y, node };
+  layoutTree(node.left, x - spread, y + 65, Math.max(spread / 2, 35), positions);
+  layoutTree(node.right, x + spread, y + 65, Math.max(spread / 2, 35), positions);
+  return positions;
 }
 
-class RedBlackTree {
-  insert(value) {
-    // 1. Standard BST insertion
-    let newNode = new RBNode(value);
-    this.bstInsert(newNode);
+function getEdges(node, positions, edges = []) {
+  if (!node) return edges;
+  if (node.left && positions[node.left.value])
+    edges.push({
+      x1: positions[node.value].x,
+      y1: positions[node.value].y,
+      x2: positions[node.left.value].x,
+      y2: positions[node.left.value].y,
+    });
+  if (node.right && positions[node.right.value])
+    edges.push({
+      x1: positions[node.value].x,
+      y1: positions[node.value].y,
+      x2: positions[node.right.value].x,
+      y2: positions[node.right.value].y,
+    });
+  getEdges(node.left, positions, edges);
+  getEdges(node.right, positions, edges);
+  return edges;
+}
 
-    // 2. Fix RB properties
-    this.fixInsert(newNode);
-  }
+function TreeSVG({ treeData, highlight, specialNodes }) {
+  if (!treeData)
+    return (
+      <div className="h-48 flex items-center justify-center text-slate-500 text-sm">
+        Red-Black Tree is empty. Insert some values.
+      </div>
+    );
 
-  fixInsert(node) {
-    while (node !== root && node.parent.color === 'RED') {
-      if (node.parent === node.parent.parent.left) {
-        let uncle = node.parent.parent.right;
+  const positions = layoutTree(treeData, 260, 40, 100);
+  const edges = getEdges(treeData, positions);
+  const posValues = Object.values(positions);
 
-        if (uncle && uncle.color === 'RED') {
-          // Case 1: Uncle is red - recolor
-          node.parent.color = 'BLACK';
-          uncle.color = 'BLACK';
-          node.parent.parent.color = 'RED';
-          node = node.parent.parent;
+  return (
+    <svg
+      width={520}
+      height={300}
+      viewBox="0 0 520 300"
+      className="mx-auto overflow-visible"
+    >
+      {edges.map((e, i) => (
+        <line
+          key={i}
+          x1={e.x1}
+          y1={e.y1}
+          x2={e.x2}
+          y2={e.y2}
+          stroke="oklch(0.28 0.05 240)"
+          strokeWidth={1.5}
+        />
+      ))}
+      {posValues.map(({ x, y, node }) => {
+        const isHighlight = highlight === node.value;
+        const specialType = specialNodes?.[node.value];
+        const isRed = node.color === "RED";
+
+        let fill, stroke, textColor;
+        if (isHighlight) {
+          fill = "oklch(0.75 0.18 145 / 0.25)";
+          stroke = "oklch(0.75 0.18 145)";
+          textColor = "oklch(0.85 0.15 145)";
+        } else if (specialType === "uncle") {
+          fill = "oklch(0.65 0.18 50 / 0.25)";
+          stroke = "oklch(0.65 0.18 50)";
+          textColor = "oklch(0.8 0.15 50)";
+        } else if (specialType === "parent") {
+          fill = "oklch(0.55 0.18 240 / 0.25)";
+          stroke = "oklch(0.55 0.18 240)";
+          textColor = "oklch(0.75 0.18 240)";
+        } else if (specialType === "grandparent") {
+          fill = "oklch(0.55 0.15 300 / 0.25)";
+          stroke = "oklch(0.55 0.15 300)";
+          textColor = "oklch(0.75 0.15 300)";
+        } else if (specialType === "rotated") {
+          fill = "oklch(0.75 0.18 195 / 0.25)";
+          stroke = CYAN;
+          textColor = CYAN;
+        } else if (isRed) {
+          fill = "oklch(0.55 0.2 25 / 0.25)";
+          stroke = "oklch(0.55 0.2 25)";
+          textColor = "oklch(0.75 0.18 25)";
         } else {
-          // Case 2 & 3: Uncle is black - rotate
-          if (node === node.parent.right) {
-            node = node.parent;
-            this.rotateLeft(node);
-          }
-          node.parent.color = 'BLACK';
-          node.parent.parent.color = 'RED';
-          this.rotateRight(node.parent.parent);
+          fill = BG;
+          stroke = BORDER;
+          textColor = "rgb(203 213 225)";
         }
+
+        return (
+          <g key={node.value}>
+            <circle
+              cx={x}
+              cy={y}
+              r={20}
+              fill={fill}
+              stroke={stroke}
+              strokeWidth={2.5}
+              className="transition-all duration-500"
+            />
+            <text
+              x={x}
+              y={y + 1}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize={12}
+              fontWeight="bold"
+              fill={textColor}
+            >
+              {node.value}
+            </text>
+            {/* Color label */}
+            <text
+              x={x}
+              y={y - 28}
+              textAnchor="middle"
+              fontSize={8}
+              fontWeight="bold"
+              fill={isRed ? "oklch(0.65 0.2 25)" : "oklch(0.45 0.04 240)"}
+            >
+              {node.color}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+export default function RedBlackTree() {
+  const [rbTree] = useState(() => new RBTreeClass());
+  const [treeData, setTreeData] = useState(null);
+  const [steps, setSteps] = useState([]);
+  const [stepIdx, setStepIdx] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(800);
+  const [started, setStarted] = useState(false);
+  const [operation, setOperation] = useState("insert");
+  const [inputValue, setInputValue] = useState("");
+  const timerRef = useRef(null);
+
+  const cur = steps[stepIdx] || null;
+  const highlight = cur?.highlight ?? null;
+  const specialNodes = cur?.specialNodes ?? {};
+
+  const reset = useCallback(() => {
+    clearInterval(timerRef.current);
+    setPlaying(false);
+    setStepIdx(0);
+    setStarted(false);
+    setSteps([]);
+    setTreeData(null);
+    rbTree.root = null;
+  }, [rbTree]);
+
+  const runSteps = (s) => {
+    setSteps(s);
+    setStepIdx(0);
+    setStarted(true);
+    setPlaying(true);
+    let idx = 0;
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      idx++;
+      if (idx >= s.length) {
+        clearInterval(timerRef.current);
+        setPlaying(false);
+        setStepIdx(s.length - 1);
+        return;
       }
-      // Mirror cases for right side...
-    }
-    root.color = 'BLACK'; // Root always black
-  }
-}`,
+      setStepIdx(idx);
+    }, speed);
   };
+
+  const togglePlay = () => {
+    if (!started) {
+      const value = parseInt(inputValue);
+      if (isNaN(value)) return;
+      let s = [];
+      if (operation === "insert") {
+        s = rbTree.insert(value);
+      } else {
+        s = rbTree.search(value);
+      }
+      if (s.length > 0) {
+        const lastStep = s[s.length - 1];
+        setTreeData(lastStep.tree);
+      }
+      runSteps(s);
+      setInputValue("");
+      return;
+    }
+    if (playing) {
+      clearInterval(timerRef.current);
+      setPlaying(false);
+    } else {
+      setPlaying(true);
+      let idx = stepIdx;
+      timerRef.current = setInterval(() => {
+        idx++;
+        if (idx >= steps.length) {
+          clearInterval(timerRef.current);
+          setPlaying(false);
+          setStepIdx(steps.length - 1);
+          return;
+        }
+        setStepIdx(idx);
+      }, speed);
+    }
+  };
+
+  const fullReset = () => {
+    reset();
+    setInputValue("");
+  };
+
+  const displayTree =
+    cur?.tree !== undefined ? cur.tree : treeData;
 
   return (
     <>
-      <SEO data={seoData} />
-
-      <div className="min-h-screen max-w-7xl mx-auto w-full flex flex-col items-center justify-start gap-20 py-20 md:py-32 px-0 af-bg">
-        <Header />
-
-        <div className="af-surface rounded-lg p-4 md:p-8 border border-neutral-800 w-full">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl md:text-4xl font-bold text-white mb-2 tracking-wide">
-              Red-Black Tree Visualization
-            </h1>
-            <p className="text-neutral-300 text-lg">
-              Self-balancing BST | Height: O(log n) | Operations: O(log n)
-            </p>
-            {message && (
-              <p className="text-lime-400 text-sm mt-2 font-medium">
-                {message}
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-wrap justify-center items-center gap-4 mb-8">
-            <div className="flex items-center gap-2">
-              <label className="text-white text-sm">Operation:</label>
-              <select
-                value={operation}
-                onChange={(e) => setOperation(e.target.value)}
-                disabled={isAnimating}
-                className="af-surface2 text-white px-3 py-2 rounded-md border border-neutral-600"
-              >
-                <option value="insert">Insert</option>
-                <option value="search">Search</option>
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {operation === "insert" ? (
-                <Plus className="w-4 h-4 text-white" />
-              ) : operation === "search" ? (
-                <Search className="w-4 h-4 text-white" />
-              ) : (
-                <Minus className="w-4 h-4 text-white" />
-              )}
-              <input
-                type="number"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                placeholder={`Value to ${operation}`}
-                disabled={isAnimating}
-                className="af-surface2 text-white px-3 py-2 rounded-md w-32 border border-neutral-600 focus:border-lime-400 focus:outline-none"
-              />
-            </div>
-
-            <SpeedControl
-              animationSpeed={animationSpeed}
-              setAnimationSpeed={setAnimationSpeed}
-              isAnimating={isAnimating}
-            />
-
-            <button
-              onClick={startAnimation}
-              disabled={isAnimating || !inputValue}
-              className="bg-gradient-to-r from-cyan-500 to-blue-500 text-black px-6 py-2 rounded-md font-semibold hover:from-lime-400 hover:to-green-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg flex items-center gap-2"
+      <SEO
+        data={{
+          title: "Red-Black Tree Visualization",
+          description:
+            "Interactive visualization of Red-Black Tree insert and search operations.",
+        }}
+      />
+      <AlgoPageLayout
+        title="Red-Black Tree"
+        category="Tree"
+        categoryHref="/tree"
+        timeComplexity="O(log n)"
+        spaceComplexity="O(log n)"
+      >
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-5">
+          <div className="space-y-4">
+            {/* Operation selector & input */}
+            <div
+              className="rounded-xl border p-4"
+              style={{ background: BG, borderColor: BORDER }}
             >
-              <Play className="w-4 h-4" />
-              {isAnimating
-                ? "Running..."
-                : `${operation === "insert" ? "Insert" : "Search"}`}
-            </button>
-
-            <button
-              onClick={reset}
-              disabled={isAnimating}
-              className="af-surface2 text-white px-6 py-2 rounded-md font-semibold hover:bg-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg flex items-center gap-2 border border-neutral-600"
-            >
-              <RotateCcw className="w-4 h-4" />
-              Reset
-            </button>
-          </div>
-
-          {/* Step Navigation Controls */}
-          {showStepControls && animationSteps.length > 0 && (
-            <div className="flex justify-center items-center gap-4 mb-8">
-              <button
-                onClick={() => navigateStep(-1)}
-                disabled={currentStep === 0}
-                className="bg-gradient-to-r from-lime-600 to-green-600 text-white px-4 py-2 rounded-md font-semibold hover:from-lime-500 hover:to-green-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2 shadow-lg"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                Back
-              </button>
-
-              <div className="af-surface2 px-4 py-2 rounded-md border border-neutral-600">
-                <span className="text-white font-semibold">
-                  Step {currentStep} / {animationSteps.length}
-                </span>
+              <div className="flex gap-2 mb-3">
+                {[
+                  [
+                    "insert",
+                    "Insert",
+                    <Plus className="w-3.5 h-3.5" />,
+                  ],
+                  [
+                    "search",
+                    "Search",
+                    <Search className="w-3.5 h-3.5" />,
+                  ],
+                ].map(([m, label, icon]) => (
+                  <button
+                    key={m}
+                    onClick={() => {
+                      reset();
+                      setOperation(m);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold border transition-all"
+                    style={{
+                      background:
+                        operation === m
+                          ? "oklch(0.75 0.18 195 / 0.15)"
+                          : "oklch(0.17 0.03 240)",
+                      borderColor: operation === m ? CYAN : BORDER,
+                      color:
+                        operation === m ? CYAN : "rgb(148 163 184)",
+                    }}
+                  >
+                    {icon}
+                    {label}
+                  </button>
+                ))}
               </div>
-
-              <button
-                onClick={() => navigateStep(1)}
-                disabled={currentStep >= animationSteps.length}
-                className="bg-gradient-to-r from-lime-600 to-green-600 text-white px-4 py-2 rounded-md font-semibold hover:from-lime-500 hover:to-green-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2 shadow-lg"
-              >
-                Next
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-
-          {/* Tree Visualization */}
-          <div className="bg-black rounded-lg p-8 border border-neutral-600 mb-8">
-            <div className="flex justify-center items-center min-h-[400px]">
-              {treeData ? (
-                <svg
-                  width="800"
-                  height="400"
-                  viewBox="0 0 800 400"
-                  className="overflow-visible"
+              <div className="flex gap-3 flex-wrap">
+                <input
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && togglePlay()}
+                  placeholder={`Value to ${operation}`}
+                  type="number"
+                  disabled={playing}
+                  className="flex-1 min-w-[120px] px-3 py-2 rounded-lg text-sm text-white outline-none"
+                  style={{
+                    background: "oklch(0.17 0.03 240)",
+                    border: `1px solid ${BORDER}`,
+                    opacity: playing ? 0.5 : 1,
+                  }}
+                  onFocus={(e) => (e.target.style.borderColor = CYAN)}
+                  onBlur={(e) => (e.target.style.borderColor = BORDER)}
+                />
+                <button
+                  onClick={togglePlay}
+                  disabled={playing}
+                  className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold"
+                  style={{
+                    background: CYAN,
+                    color: "oklch(0.1 0.02 240)",
+                    opacity: playing ? 0.5 : 1,
+                  }}
                 >
-                  {renderTree(treeData)}
-                </svg>
-              ) : (
-                <div className="text-neutral-400 text-lg">
-                  Red-Black Tree is empty. Insert some values to see the
-                  structure.
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Legend */}
-          <div className="bg-black rounded-lg p-6 border border-neutral-600 mb-8">
-            <h3 className="text-white text-lg font-semibold mb-4 text-center">
-              Color Legend
-            </h3>
-            <div className="flex flex-wrap justify-center items-center gap-6">
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-red-500 rounded-full border-2 border-red-600"></div>
-                <span className="text-white text-sm">Red Node</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-gray-800 rounded-full border-2 border-gray-700"></div>
-                <span className="text-white text-sm">Black Node</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-lime-500 rounded-full border-2 border-lime-600"></div>
-                <span className="text-white text-sm">Current/Found</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-orange-500 rounded-full border-2 border-orange-600"></div>
-                <span className="text-white text-sm">Uncle</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-blue-500 rounded-full border-2 border-blue-600"></div>
-                <span className="text-white text-sm">Parent</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-purple-500 rounded-full border-2 border-purple-600"></div>
-                <span className="text-white text-sm">Grandparent</span>
+                  {playing ? (
+                    <Pause className="w-4 h-4" />
+                  ) : (
+                    <Play className="w-4 h-4" />
+                  )}
+                  {!started
+                    ? operation === "insert"
+                      ? "Insert"
+                      : "Search"
+                    : playing
+                      ? "Pause"
+                      : "Resume"}
+                </button>
+                <button
+                  onClick={fullReset}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold border text-slate-300"
+                  style={{ borderColor: BORDER }}
+                >
+                  <RotateCcw className="w-4 h-4" /> Reset
+                </button>
+                <SpeedControl
+                  animationSpeed={speed}
+                  setAnimationSpeed={setSpeed}
+                  isAnimating={playing}
+                />
               </div>
             </div>
-          </div>
 
-          {/* Progress Bar */}
-          {totalSteps > 0 && (
-            <div className="w-full af-surface2 rounded-full h-2 mb-4">
-              <div
-                className="bg-gradient-to-r from-cyan-400 to-blue-400 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${(currentStep / totalSteps) * 100}%` }}
+            {/* Tree visualization */}
+            <div
+              className="rounded-xl border p-4 overflow-x-auto"
+              style={{ background: BG, borderColor: BORDER }}
+            >
+              <TreeSVG
+                treeData={displayTree}
+                highlight={highlight}
+                specialNodes={specialNodes}
               />
             </div>
-          )}
 
-          {/* Properties */}
-          <div className="text-center text-neutral-300 text-sm">
-            <div className="mb-2">
-              <strong>Red-Black Tree Properties:</strong>
+            {/* Legend */}
+            <div
+              className="rounded-xl border p-3 flex flex-wrap gap-4 items-center text-xs text-slate-400"
+              style={{ background: BG, borderColor: BORDER }}
+            >
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="w-3 h-3 rounded-full"
+                  style={{ background: "oklch(0.55 0.2 25)" }}
+                />
+                Red Node
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="w-3 h-3 rounded-full border"
+                  style={{ borderColor: BORDER, background: BG }}
+                />
+                Black Node
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="w-3 h-3 rounded-full"
+                  style={{ background: "oklch(0.75 0.18 145)" }}
+                />
+                Current/Found
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="w-3 h-3 rounded-full"
+                  style={{ background: "oklch(0.65 0.18 50)" }}
+                />
+                Uncle
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="w-3 h-3 rounded-full"
+                  style={{ background: "oklch(0.55 0.18 240)" }}
+                />
+                Parent
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="w-3 h-3 rounded-full"
+                  style={{ background: "oklch(0.55 0.15 300)" }}
+                />
+                Grandparent
+              </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs opacity-80">
-              <p>• Every node is either red or black</p>
-              <p>• Root is always black</p>
-              <p>• All leaves (NIL) are black</p>
-              <p>• Red nodes have black children only</p>
-              <p>• All root-to-leaf paths have same black height</p>
-              <p>• Guarantees O(log n) height</p>
-            </div>
+
+            <ExplanationPanel
+              steps={steps.map((s) => s.explanation)}
+              currentStep={stepIdx}
+              totalSteps={steps.length}
+            />
+          </div>
+
+          <div className="h-[500px] xl:h-auto">
+            <CodePanel codes={CODES} highlightLine={cur?.line ?? null} />
           </div>
         </div>
-
-        <Description dataObj={descriptionData} />
-      </div>
+      </AlgoPageLayout>
     </>
   );
 }
